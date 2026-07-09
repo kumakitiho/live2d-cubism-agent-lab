@@ -1,0 +1,4 @@
+interface:
+  display_name: "Live2D Cubism Workflow"
+  short_description: "Plan and operate safe Live2D Cubism workflows"
+  default_prompt: "Use $live2d-cubism-workflow to prepare a safe Cubism action plan."

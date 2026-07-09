@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local Cubism authorization and user-owned model assets
+.live2d-agent/
+assets/models/*
+!assets/models/.gitkeep
+*.psd
+*.psb
+*.cmo3
+*.moc3
+*.can3
+
+# Generated evidence and reports
+outputs/*
+!outputs/.gitkeep

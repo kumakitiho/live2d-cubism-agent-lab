@@ -1,0 +1,22 @@
+schema_version: 1
+project: replace-me
+model:
+  scope: bust_up
+  purpose: streaming
+  style: anime
+appearance:
+  summary: replace-me
+motions:
+  face: [blink, eye_xy, mouth_open, head_xyz]
+  body: [body_xy]
+  physics: [front_hair, side_hair]
+expressions: [normal, smile, surprised]
+constraints:
+  no_full_auto_rigging_claim: true
+  human_visual_review_required: true
+  separate_material_and_import_psd: true
+deliverables:
+  - character_spec.yaml
+  - layer_map.yaml
+  - action_plan.yaml
+  - rigging_plan.md

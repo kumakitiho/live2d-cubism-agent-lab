@@ -1,0 +1,52 @@
+schema_version: 1
+project: sample-one-image-model
+source_image:
+  path: assets/source/character.png
+  rights_status: needs_confirmation
+model_scope: bust_up
+motion_level: standard
+generation_policy:
+  same_canvas_alignment: true
+  transparent_parts: true
+  mark_inferred_hidden_regions: true
+  review_inferred_before_handoff: true
+parts:
+  - layer_id: face_base
+    layer_name: face_base
+    role: face_base
+    side: C
+    generation_method: mask_extract
+    inferred: false
+    review_required: false
+    required: true
+    source_file: generated/parts/face_base.png
+    mask_file: generated/masks/face_base.png
+    prompt_id: part-face_base
+    prompt:
+      instruction: Create only the face_base part on a transparent, source-aligned canvas.
+      preserve: [character identity, line style, palette, lighting direction]
+      avoid: [full character regeneration, canvas resize, opaque background]
+    order: 10
+  - layer_id: face_hidden_fill
+    layer_name: face_hidden_fill
+    role: face_hidden_fill
+    side: C
+    generation_method: inpaint
+    inferred: true
+    review_required: true
+    required: true
+    source_file: generated/parts/face_hidden_fill.png
+    mask_file: generated/masks/face_hidden_fill.png
+    prompt_id: part-face_hidden_fill
+    prompt:
+      instruction: Conservatively infer only the hidden face pixels on a transparent, source-aligned canvas.
+      preserve: [character identity, line style, palette, lighting direction]
+      avoid: [full character regeneration, canvas resize, opaque background]
+    order: 20
+deliverables:
+  asset_manifest: generated/asset_manifest.yaml
+  layer_map: generated/layer_map.yaml
+  model_import_psd: generated/model_import.psd
+handoff:
+  target_skill: live2d-cubism-workflow
+  status: blocked_until_assets_are_generated_and_approved

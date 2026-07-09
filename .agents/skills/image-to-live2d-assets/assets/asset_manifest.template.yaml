@@ -1,0 +1,37 @@
+schema_version: 1
+project: replace_me
+source_image:
+  path: assets/source/character.png
+  rights_status: needs_confirmation
+canvas:
+  width: 2048
+  height: 2048
+  color_mode: RGBA
+  bit_depth: 8
+  color_profile: sRGB
+output:
+  model_import_psd: generated/model_import.psd
+  layer_map: generated/layer_map.yaml
+import_constraints:
+  unique_layer_names: true
+  one_drawable_per_layer: true
+  rgb_8bit_srgb: true
+  same_canvas_alignment: true
+  no_reference_layers: true
+  masks_resolved: false
+  inferred_assets_reviewed: false
+parts:
+  - layer_id: face_base
+    layer_name: face_base
+    role: face_base
+    side: C
+    source_file: generated/parts/face_base.png
+    mask_file: generated/masks/face_base.png
+    prompt_id: part-face_base
+    generation_method: mask_extract
+    order: 10
+    required: true
+    inferred: false
+    review_required: false
+    readiness: planned
+    include_in_import: true

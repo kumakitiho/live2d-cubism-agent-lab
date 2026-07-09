@@ -1,0 +1,14 @@
+schema_version: 1
+project: replace-me
+canvas:
+  width: 4096
+  height: 4096
+  color_mode: RGBA
+layers:
+  - path: Face/face_base
+    name: face_base
+    role: face_base
+    side: C
+    source: assets/models/material_separation_master.psd
+    readiness: planned
+    required: true

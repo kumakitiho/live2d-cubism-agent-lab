@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "live2d-cubism-agent-lab"
+version = "0.1.0"
+description = "Safe, high-level Codex tooling for Live2D Cubism workflows"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "PyYAML>=6.0.2",
+  "websockets>=14.2",
+]
+
+[project.optional-dependencies]
+windows = [
+  "PyAutoGUI>=0.9.54",
+  "psutil>=7.0",
+  "pywinauto>=0.6.8",
+]
+dev = [
+  "mypy>=1.14",
+  "pytest>=8.3",
+  "ruff>=0.9",
+  "types-PyYAML>=6.0.12",
+]
+
+[project.scripts]
+cubism-ui = "tools.cubism_ui:main"
+cubism-api = "tools.cubism_api:main"
+cubism-bridge = "tools.cubism_bridge:main"
+material-planner = "tools.material_planner:main"
+asset-manifest-validator = "tools.asset_manifest_validator:main"
+psd-asset-builder = "tools.psd_asset_builder:main"
+validate-action-plan = "scripts.validate_action_plan:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tools", "scripts"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+disallow_any_generics = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_ignores = true

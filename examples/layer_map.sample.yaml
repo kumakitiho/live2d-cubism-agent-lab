@@ -1,0 +1,28 @@
+schema_version: 1
+project: sample-one-image-model
+source_psd: generated/model_import.psd
+canvas:
+  width: 2048
+  height: 2048
+  color_mode: RGBA
+layers:
+  - path: Face/face_base
+    name: face_base
+    layer_id: face_base
+    role: face_base
+    side: C
+    source: generated/parts/face_base.png
+    inferred: false
+    review_required: false
+    readiness: approved
+    required: true
+  - path: Face/face_hidden_fill
+    name: face_hidden_fill
+    layer_id: face_hidden_fill
+    role: face_hidden_fill
+    side: C
+    source: generated/parts/face_hidden_fill.png
+    inferred: true
+    review_required: true
+    readiness: generated
+    required: true

@@ -1,0 +1,28 @@
+schema_version: 1
+project: replace_me
+source_image:
+  path: assets/source/character.png
+  rights_status: needs_confirmation
+model_scope: bust_up
+motion_level: standard
+parts:
+  - layer_id: face_base
+    layer_name: face_base
+    role: face_base
+    side: C
+    generation_method: mask_extract
+    inferred: false
+    review_required: false
+    required: true
+    source_file: generated/parts/face_base.png
+    mask_file: generated/masks/face_base.png
+    prompt_id: part-face_base
+    prompt:
+      instruction: Create only the face_base part on a transparent, source-aligned canvas.
+      preserve: [character identity, line style, palette, lighting direction]
+      avoid: [full character regeneration, canvas resize, opaque background]
+    order: 10
+deliverables:
+  asset_manifest: generated/asset_manifest.yaml
+  layer_map: generated/layer_map.yaml
+  model_import_psd: generated/model_import.psd

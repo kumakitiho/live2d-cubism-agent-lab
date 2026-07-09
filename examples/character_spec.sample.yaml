@@ -1,0 +1,22 @@
+schema_version: 1
+project: neutral-short-hair-streamer
+model:
+  scope: bust_up
+  purpose: game_streaming
+  style: anime
+appearance:
+  summary: 中性的な黒髪ショートのゲーム配信用キャラクター
+motions:
+  face: [blink, eye_xy, brow_up_down, mouth_open, head_xyz]
+  body: [body_xy]
+  physics: [front_hair, side_hair, back_hair]
+expressions: [normal, smile, surprised, unimpressed]
+constraints:
+  no_full_auto_rigging_claim: true
+  human_visual_review_required: true
+  separate_material_and_import_psd: true
+deliverables:
+  - character_spec.yaml
+  - layer_map.yaml
+  - action_plan.yaml
+  - rigging_plan.md

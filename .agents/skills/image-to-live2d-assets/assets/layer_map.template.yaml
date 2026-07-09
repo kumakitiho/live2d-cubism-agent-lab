@@ -1,0 +1,17 @@
+schema_version: 1
+project: replace_me
+source_psd: generated/model_import.psd
+canvas:
+  width: 2048
+  height: 2048
+layers:
+  - path: Face/face_base
+    name: face_base
+    layer_id: face_base
+    role: face_base
+    side: C
+    source: generated/parts/face_base.png
+    inferred: false
+    review_required: false
+    readiness: planned
+    required: true
