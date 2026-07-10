@@ -78,6 +78,11 @@ class ResourceScheduler:
         self._model_lock = threading.Lock()
 
     def _invoke(self, task: ScheduledTask) -> Any:
+        if task.resource == "gpu" and self.limits.gpu_memory_budget_mb and task.gpu_memory_mb == 0:
+            raise RuntimeError(
+                f"task {task.name} has unknown GPU memory usage while a budget is active; "
+                "provide an estimated gpu_memory_mb"
+            )
         if (
             task.resource == "gpu"
             and self.limits.gpu_memory_budget_mb

@@ -126,3 +126,44 @@ def test_backend_release_runs_after_success_and_failure() -> None:
 
     assert success.releases == 1
     assert failure.releases == 1
+
+
+def test_active_gpu_budget_rejects_unknown_memory_estimate() -> None:
+    results = ResourceScheduler(ResourceLimits(gpu_memory_budget_mb=4096)).run(
+        [ScheduledTask("gpu", lambda: None, resource="gpu")]
+    )
+
+    assert results["gpu"].status == "failed"
+    assert "unknown GPU memory usage" in str(results["gpu"].error)
+
+
+def test_active_gpu_budget_accepts_known_estimate_within_budget() -> None:
+    results = ResourceScheduler(ResourceLimits(gpu_memory_budget_mb=4096)).run(
+        [
+            ScheduledTask(
+                "gpu",
+                lambda: "ok",
+                resource="gpu",
+                gpu_memory_mb=2048,
+            )
+        ]
+    )
+
+    assert results["gpu"].status == "completed"
+    assert results["gpu"].value == "ok"
+
+
+def test_active_gpu_budget_rejects_estimate_over_budget() -> None:
+    results = ResourceScheduler(ResourceLimits(gpu_memory_budget_mb=4096)).run(
+        [
+            ScheduledTask(
+                "gpu",
+                lambda: None,
+                resource="gpu",
+                gpu_memory_mb=6144,
+            )
+        ]
+    )
+
+    assert results["gpu"].status == "failed"
+    assert "exceeds gpu memory budget" in str(results["gpu"].error)

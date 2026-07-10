@@ -86,7 +86,7 @@ python -m tools.asset_generation_orchestrator generated/asset_generation_queue.y
 python -m tools.asset_generation_orchestrator generated/asset_generation_queue.segmented.yaml --segmentation-backend disabled --inpainting-backend diffusers --run-id inpaint-001 --execute
 ```
 
-中断runは同じ入力とrun IDに `--resume` を付けて再開します。canonical queueまたはsource画像が変わったrunはstaleとして拒否されます。詳しい成果物、review手順、安全境界は [docs/asset-generation-orchestration.md](docs/asset-generation-orchestration.md) を参照してください。
+中断runは同じ入力とrun IDに `--resume` を付けて再開します。canonical queue、source画像、completed stage成果物、実行設定が変わったrunはstaleとして拒否されます。実backendのmodel size、quality threshold、GPU memory estimateはCLIで明示上書きできます。詳しい成果物、review手順、安全境界は [docs/asset-generation-orchestration.md](docs/asset-generation-orchestration.md) を参照してください。
 FLUX Fillを含むmodel IDはhard-codeしていません。使用するcheckpointごとに配布元のライセンス、商用利用、
 出力利用、アクセス条件を確認してください。adapterやoptional extraの導入はmodel利用許諾を意味しません。
 

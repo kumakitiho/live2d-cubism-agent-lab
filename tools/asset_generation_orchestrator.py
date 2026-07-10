@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -22,6 +22,7 @@ from tools.asset_pipeline_common import (
     load_soft_mask,
     resolve_inside_base,
 )
+from tools.asset_quality_evaluator import DEFAULT_QUALITY_THRESHOLDS
 from tools.asset_quality_evaluator import main as quality_main
 from tools.asset_recomposer import main as recompose_main
 from tools.asset_refinement_planner import main as refinement_main
@@ -215,6 +216,8 @@ def _initial_state(
     run_id: str,
     segmentation_backend: str,
     inpainting_backend: str,
+    segmentation_gpu_memory_mb: int,
+    inpainting_gpu_memory_mb: int,
     limits: ResourceLimits,
     configuration_sha256: str,
 ) -> dict[str, Any]:
@@ -237,6 +240,7 @@ def _initial_state(
                 "status": segmentation_status,
                 "request": None,
                 "result": None,
+                "estimated_gpu_memory_mb": segmentation_gpu_memory_mb,
             },
             "assignment": {"status": assignment_status, "plan": None},
             "extraction": {"status": "planned", "request": None, "result": None},
@@ -246,6 +250,7 @@ def _initial_state(
                 "requests": [],
                 "results": [],
                 "selections": [],
+                "estimated_gpu_memory_mb": inpainting_gpu_memory_mb,
             },
             "quality": {"status": "planned", "request": None, "result": None},
             "refinement": {"status": "planned", "request": None, "result": None},
@@ -282,7 +287,11 @@ def _validate_resume_state(
         raise ValueError("resume configuration differs from the original run")
 
 
-def _configuration_sha256(args: argparse.Namespace, limits: ResourceLimits) -> str:
+def _configuration_sha256(
+    args: argparse.Namespace,
+    limits: ResourceLimits,
+    inpainting_backend_config: Mapping[str, Any] | None,
+) -> str:
     configuration = {
         "segmentation_backend": args.segmentation_backend,
         "inpainting_backend": args.inpainting_backend,
@@ -297,8 +306,21 @@ def _configuration_sha256(args: argparse.Namespace, limits: ResourceLimits) -> s
         "inpainting_model_id": args.inpainting_model_id,
         "inpainting_model_revision": args.inpainting_model_revision,
         "inpainting_dtype": args.inpainting_dtype,
+        "inpainting_width": args.inpainting_width,
+        "inpainting_height": args.inpainting_height,
+        "inpainting_padding": args.inpainting_padding,
+        "inpainting_max_edge_continuity_score": (args.inpainting_max_edge_continuity_score),
+        "inpainting_max_boundary_color_difference_score": (
+            args.inpainting_max_boundary_color_difference_score
+        ),
+        "inpainting_max_visual_reconstruction_difference_score": (
+            args.inpainting_max_visual_reconstruction_difference_score
+        ),
+        "segmentation_gpu_memory_mb": args.segmentation_gpu_memory_mb,
+        "inpainting_gpu_memory_mb": args.inpainting_gpu_memory_mb,
         "device": args.device,
         "resources": limits.to_dict(),
+        "resolved_inpainting_backend_config": inpainting_backend_config,
     }
     encoded = json.dumps(configuration, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return _sha256_bytes(encoded)
@@ -423,6 +445,117 @@ def _verify_segmentation_artifacts(
     )
     if dict(expected) != actual:
         raise ValueError("segmentation artifact digest mismatch or mixed run artifacts")
+
+
+def _artifact_digests(
+    artifacts: Sequence[Path],
+    *,
+    base_dir: Path,
+) -> dict[str, str]:
+    digests: dict[str, str] = {}
+    for artifact in artifacts:
+        if not artifact.is_file():
+            raise FileNotFoundError(f"stage artifact not found: {artifact}")
+        reference = _relative(artifact, base_dir)
+        if reference in digests:
+            continue
+        digests[reference] = file_sha256(artifact)
+    return digests
+
+
+def _verify_stage_artifacts(
+    stage: Mapping[str, Any],
+    artifacts: Sequence[Path],
+    *,
+    base_dir: Path,
+    stage_name: str,
+) -> None:
+    expected = stage.get("artifact_sha256")
+    if not isinstance(expected, Mapping) or not expected:
+        raise ValueError(f"completed {stage_name} stage has no artifact digest manifest")
+    actual = _artifact_digests(artifacts, base_dir=base_dir)
+    if dict(expected) != actual:
+        raise ValueError(f"{stage_name} artifact digest mismatch")
+
+
+def _require_artifact_under(path: Path, root: Path, field: str) -> Path:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise ValueError(f"{field} escaped its run stage directory") from exc
+    return path
+
+
+def _extraction_artifact_paths(
+    queue: Mapping[str, Any],
+    *,
+    queue_path: Path,
+    base_dir: Path,
+    paths: RunPaths,
+) -> list[Path]:
+    extraction_root = paths.path("extracted-parts")
+    artifacts = [queue_path, paths.path("extracted-parts/input.yaml")]
+    for asset in _queue_assets(queue):
+        source_file = asset.get("source_file")
+        if not isinstance(source_file, str):
+            raise ValueError("extracted queue asset source_file is required")
+        artifact = resolve_inside_base(base_dir, source_file, "extracted part")
+        artifacts.append(_require_artifact_under(artifact, extraction_root, "extracted part"))
+    return artifacts
+
+
+def _inpainting_artifact_paths(
+    targets: Sequence[Mapping[str, Any]],
+    *,
+    queue_path: Path,
+    run_id: str,
+    base_dir: Path,
+    paths: RunPaths,
+) -> list[Path]:
+    inpainting_root = paths.path("inpainting")
+    artifacts = [queue_path, paths.path("inpainting/provenance.yaml")]
+    for asset in targets:
+        layer_id = str(asset["layer_id"])
+        request_path = paths.path(f"inpainting/{layer_id}/request.yaml")
+        result_path = paths.path(f"inpainting/{layer_id}/result.yaml")
+        selection_path = paths.path(f"inpainting/{layer_id}/selection.yaml")
+        artifacts.extend((request_path, result_path, selection_path))
+        result = _load_run_artifact(result_path, run_id=run_id)
+        for candidate in result.get("candidates", []):
+            if not isinstance(candidate, Mapping):
+                raise ValueError("inpainting candidates must be mappings")
+            for field in ("output_file", "preview_file"):
+                value = candidate.get(field)
+                if not isinstance(value, str):
+                    raise ValueError(f"inpainting candidate {field} is required")
+                artifact = resolve_inside_base(base_dir, value, field)
+                artifacts.append(
+                    _require_artifact_under(
+                        artifact,
+                        inpainting_root,
+                        f"inpainting candidate {field}",
+                    )
+                )
+    return artifacts
+
+
+def _quality_artifact_paths(paths: RunPaths) -> list[Path]:
+    return [
+        paths.path("masks/mask-manifest.yaml"),
+        paths.path("quality/input.yaml"),
+        paths.path("quality/result.yaml"),
+        paths.path("quality/difference.png"),
+        paths.path("previews/reconstructed.png"),
+        paths.path("previews/recomposition-difference.png"),
+    ]
+
+
+def _refinement_artifact_paths(paths: RunPaths) -> list[Path]:
+    return [
+        paths.path("refinement/plan.yaml"),
+        paths.path("queue-candidates/refined.yaml"),
+        paths.path("queue-candidates/diff-summary.yaml"),
+    ]
 
 
 def _verify_assignment_matches_segmentation(
@@ -571,10 +704,7 @@ def _inpainting_request(
     *,
     run_id: str,
     backend: str,
-    model_id: str | None,
-    model_revision: str | None,
-    device: str,
-    dtype: str,
+    backend_config: Mapping[str, Any],
     base_dir: Path,
     paths: RunPaths,
 ) -> dict[str, Any]:
@@ -617,24 +747,97 @@ def _inpainting_request(
             "lighting change, background, canvas resize, unmasked region modification"
         ),
         "backend": backend,
-        "backend_config": {
-            "padding": 2,
-            "model_size": [64, 64],
-            "local_files_only": True,
-            "model_id": _sanitize_provenance(model_id, base_dir),
-            "model_revision": model_revision,
-            "device": device,
-            "dtype": dtype,
-            "quality_thresholds": {
-                "max_edge_continuity_score": 1.0,
-                "max_boundary_color_difference_score": 1.0,
-                "max_visual_reconstruction_difference_score": 1.0,
-            },
-        },
+        "backend_config": deepcopy(dict(backend_config)),
         "candidate_count": 3,
         "seed_policy": {"mode": "explicit_list", "seeds": [101, 102, 103]},
         "output_dir": _relative(paths.path(f"inpainting/{layer_id}/candidates"), base_dir),
     }
+
+
+def build_inpainting_backend_config(
+    backend_name: str,
+    *,
+    base_dir: Path,
+    model_id: str | None = None,
+    model_revision: str | None = None,
+    device: str = "cpu",
+    dtype: str = "float32",
+    width: int | None = None,
+    height: int | None = None,
+    padding: int | None = None,
+    max_edge_continuity_score: float | None = None,
+    max_boundary_color_difference_score: float | None = None,
+    max_visual_reconstruction_difference_score: float | None = None,
+    estimated_gpu_memory_mb: int = 0,
+) -> dict[str, Any]:
+    backend = registry.get_inpainting(backend_name)
+    recommended_size = backend.recommended_size
+    if not isinstance(recommended_size, int) or recommended_size <= 0:
+        raise ValueError(f"backend {backend_name} has an invalid recommended_size")
+    resolved_width = recommended_size if width is None else width
+    resolved_height = recommended_size if height is None else height
+    resolved_padding = (2 if backend_name == "mock" else 32) if padding is None else padding
+    if resolved_width <= 0 or resolved_height <= 0:
+        raise ValueError("inpainting width and height must be positive")
+    if resolved_padding < 0:
+        raise ValueError("inpainting padding must be non-negative")
+    if estimated_gpu_memory_mb < 0:
+        raise ValueError("inpainting estimated GPU memory must be non-negative")
+    threshold_names = (
+        "max_edge_continuity_score",
+        "max_boundary_color_difference_score",
+        "max_visual_reconstruction_difference_score",
+    )
+    thresholds = dict(DEFAULT_QUALITY_THRESHOLDS)
+    if backend_name == "mock":
+        thresholds.update({name: 1.0 for name in threshold_names})
+    overrides = {
+        "max_edge_continuity_score": max_edge_continuity_score,
+        "max_boundary_color_difference_score": max_boundary_color_difference_score,
+        "max_visual_reconstruction_difference_score": (max_visual_reconstruction_difference_score),
+    }
+    for name, value in overrides.items():
+        if value is None:
+            continue
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"{name} must be between 0 and 1")
+        thresholds[name] = value
+    return {
+        "padding": resolved_padding,
+        "model_size": [resolved_width, resolved_height],
+        "local_files_only": True,
+        "model_id": _sanitize_provenance(model_id, base_dir),
+        "model_revision": model_revision,
+        "device": device,
+        "dtype": dtype,
+        "estimated_gpu_memory_mb": estimated_gpu_memory_mb,
+        "quality_thresholds": thresholds,
+    }
+
+
+def _inpainting_config_from_args(
+    args: argparse.Namespace,
+    base_dir: Path,
+) -> dict[str, Any] | None:
+    if args.inpainting_backend == "disabled":
+        return None
+    return build_inpainting_backend_config(
+        args.inpainting_backend,
+        base_dir=base_dir,
+        model_id=args.inpainting_model_id,
+        model_revision=args.inpainting_model_revision,
+        device=args.device,
+        dtype=args.inpainting_dtype,
+        width=args.inpainting_width,
+        height=args.inpainting_height,
+        padding=args.inpainting_padding,
+        max_edge_continuity_score=args.inpainting_max_edge_continuity_score,
+        max_boundary_color_difference_score=(args.inpainting_max_boundary_color_difference_score),
+        max_visual_reconstruction_difference_score=(
+            args.inpainting_max_visual_reconstruction_difference_score
+        ),
+        estimated_gpu_memory_mb=args.inpainting_gpu_memory_mb,
+    )
 
 
 def _segmentation_provenance(
@@ -776,6 +979,8 @@ def _inpainting_provenance(
 
 
 def _validate_backend_options(args: argparse.Namespace) -> None:
+    if args.segmentation_gpu_memory_mb < 0 or args.inpainting_gpu_memory_mb < 0:
+        raise ValueError("estimated GPU memory values must be non-negative")
     if args.segmentation_backend != "disabled":
         registry.get_segmentation(
             args.segmentation_backend,
@@ -811,6 +1016,38 @@ def _wait_result(state: dict[str, Any], paths: RunPaths, base_dir: Path) -> dict
     }
 
 
+def _manual_review_result(
+    state: dict[str, Any],
+    paths: RunPaths,
+    base_dir: Path,
+) -> dict[str, Any]:
+    state["outcome"] = "manual_review_required"
+    _atomic_yaml(paths.state, state)
+    return {
+        "status": "manual_review_required",
+        "run_id": state["run_id"],
+        "run_state": _relative(paths.state, base_dir),
+        "queue_candidate": state.get("queue_candidate"),
+    }
+
+
+def _has_global_quality_failure(quality_report: Mapping[str, Any]) -> bool:
+    summary = quality_report.get("summary")
+    thresholds = quality_report.get("thresholds")
+    if not isinstance(summary, Mapping) or not isinstance(thresholds, Mapping):
+        raise ValueError("quality result summary and thresholds are required")
+    score = summary.get("visual_reconstruction_difference_score")
+    threshold = thresholds.get("max_visual_reconstruction_difference_score")
+    if (
+        not isinstance(score, (int, float))
+        or isinstance(score, bool)
+        or not isinstance(threshold, (int, float))
+        or isinstance(threshold, bool)
+    ):
+        raise ValueError("quality visual reconstruction score and threshold must be numeric")
+    return float(score) > float(threshold)
+
+
 def _execute(args: argparse.Namespace) -> dict[str, Any]:
     base_dir = args.base_dir.resolve()
     queue_path = resolve_inside_base(base_dir, str(args.queue), "canonical queue")
@@ -837,7 +1074,8 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         model_exclusive_lock=not args.no_model_exclusive_lock,
     )
     scheduler = ResourceScheduler(limits)
-    configuration_sha256 = _configuration_sha256(args, limits)
+    inpainting_backend_config = _inpainting_config_from_args(args, base_dir)
+    configuration_sha256 = _configuration_sha256(args, limits, inpainting_backend_config)
 
     if paths.state.exists():
         if not args.resume:
@@ -866,6 +1104,8 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
             run_id=run_id,
             segmentation_backend=args.segmentation_backend,
             inpainting_backend=args.inpainting_backend,
+            segmentation_gpu_memory_mb=args.segmentation_gpu_memory_mb,
+            inpainting_gpu_memory_mb=args.inpainting_gpu_memory_mb,
             limits=limits,
             configuration_sha256=configuration_sha256,
         )
@@ -923,6 +1163,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                     "segmentation",
                     lambda: segmentation_main(segment_args),
                     resource="cpu" if args.segmentation_backend == "mock" else "gpu",
+                    gpu_memory_mb=args.segmentation_gpu_memory_mb,
                 )
                 if code != 0:
                     raise StageFailure("segmentation", "segmentation command failed")
@@ -1070,14 +1311,26 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                 "queue_candidate": state.get("queue_candidate"),
             }
 
+        current_stage = "extraction"
         extraction_stage = _stage(state, "extraction")
         if extraction_stage.get("status") == "completed":
             candidate_ref = extraction_stage.get("queue_candidate")
             if not isinstance(candidate_ref, str):
                 raise StageFailure("extraction", "completed extraction has no queue candidate")
-            working_queue = load_yaml_mapping(resolve_inside_base(base_dir, candidate_ref, "queue"))
+            extracted_queue_path = resolve_inside_base(base_dir, candidate_ref, "queue")
+            working_queue = load_yaml_mapping(extracted_queue_path)
+            _verify_stage_artifacts(
+                extraction_stage,
+                _extraction_artifact_paths(
+                    working_queue,
+                    queue_path=extracted_queue_path,
+                    base_dir=base_dir,
+                    paths=paths,
+                ),
+                base_dir=base_dir,
+                stage_name="extraction",
+            )
         else:
-            current_stage = "extraction"
             extraction_stage["status"] = "running"
             extraction_stage["request"] = {
                 "run_id": run_id,
@@ -1107,11 +1360,21 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                     "status": "completed",
                     "result": _relative(paths.path("extracted-parts/input.yaml"), base_dir),
                     "queue_candidate": _relative(extracted_queue_path, base_dir),
+                    "artifact_sha256": _artifact_digests(
+                        _extraction_artifact_paths(
+                            working_queue,
+                            queue_path=extracted_queue_path,
+                            base_dir=base_dir,
+                            paths=paths,
+                        ),
+                        base_dir=base_dir,
+                    ),
                 }
             )
             state["queue_candidate"] = _relative(extracted_queue_path, base_dir)
             _atomic_yaml(paths.state, state)
 
+        current_stage = "inpainting"
         inpainting_stage = _stage(state, "inpainting")
         targets = [
             asset
@@ -1121,7 +1384,6 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         if not targets:
             inpainting_stage["status"] = "skipped"
         elif inpainting_stage.get("status") != "completed":
-            current_stage = "inpainting"
             selections: list[dict[str, Any]] = []
             requests: list[dict[str, Any]] = []
             results: list[dict[str, Any]] = []
@@ -1156,10 +1418,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                         asset,
                         run_id=run_id,
                         backend=args.inpainting_backend,
-                        model_id=args.inpainting_model_id,
-                        model_revision=args.inpainting_model_revision,
-                        device=args.device,
-                        dtype=args.inpainting_dtype,
+                        backend_config=inpainting_backend_config or {},
                         base_dir=base_dir,
                         paths=paths,
                     )
@@ -1187,6 +1446,12 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                             f"inpaint:{layer_id}",
                             partial(inpainting_main, command),
                             resource="cpu" if args.inpainting_backend == "mock" else "gpu",
+                            gpu_memory_mb=int(
+                                request["backend_config"].get(
+                                    "estimated_gpu_memory_mb",
+                                    0,
+                                )
+                            ),
                         )
                     )
                 task_results = scheduler.run(tasks)
@@ -1312,23 +1577,72 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                 {
                     "status": "completed",
                     "queue_candidate": _relative(inpainted_queue_path, base_dir),
+                    "artifact_sha256": _artifact_digests(
+                        _inpainting_artifact_paths(
+                            targets,
+                            queue_path=inpainted_queue_path,
+                            run_id=run_id,
+                            base_dir=base_dir,
+                            paths=paths,
+                        ),
+                        base_dir=base_dir,
+                    ),
                 }
             )
             state["queue_candidate"] = _relative(inpainted_queue_path, base_dir)
             _atomic_yaml(paths.state, state)
-        elif isinstance(inpainting_stage.get("queue_candidate"), str):
-            working_queue = load_yaml_mapping(
-                resolve_inside_base(base_dir, inpainting_stage["queue_candidate"], "queue")
+        elif inpainting_stage.get("status") == "completed":
+            completed_queue_ref = inpainting_stage.get("queue_candidate")
+            if not isinstance(completed_queue_ref, str):
+                raise StageFailure("inpainting", "completed inpainting has no queue candidate")
+            completed_queue_path = resolve_inside_base(
+                base_dir,
+                completed_queue_ref,
+                "inpainting queue candidate",
             )
+            _verify_stage_artifacts(
+                inpainting_stage,
+                _inpainting_artifact_paths(
+                    targets,
+                    queue_path=completed_queue_path,
+                    run_id=run_id,
+                    base_dir=base_dir,
+                    paths=paths,
+                ),
+                base_dir=base_dir,
+                stage_name="inpainting",
+            )
+            working_queue = load_yaml_mapping(completed_queue_path)
 
+        current_stage = "quality"
         quality_stage = _stage(state, "quality")
         queue_candidate_ref = state.get("queue_candidate")
         if not isinstance(queue_candidate_ref, str):
             raise StageFailure("quality", "quality stage requires a queue candidate")
         queue_candidate_path = resolve_inside_base(base_dir, queue_candidate_ref, "queue candidate")
-        if quality_stage.get("status") != "completed":
-            current_stage = "quality"
+        if quality_stage.get("status") == "completed":
+            _verify_stage_artifacts(
+                quality_stage,
+                _quality_artifact_paths(paths),
+                base_dir=base_dir,
+                stage_name="quality",
+            )
+        elif (
+            quality_stage.get("status") == "waiting_for_review"
+            and quality_stage.get("manual_review_required") is True
+        ):
+            _verify_stage_artifacts(
+                quality_stage,
+                _quality_artifact_paths(paths),
+                base_dir=base_dir,
+                stage_name="quality",
+            )
+            if queue_path.read_bytes() != queue_bytes:
+                raise StageFailure("quality", "canonical queue changed during the run")
+            return _manual_review_result(state, paths, base_dir)
+        else:
             quality_stage["status"] = "running"
+            quality_stage.pop("manual_review_required", None)
             mask_manifest_path = paths.path("masks/mask-manifest.yaml")
             manifest = build_mask_manifest(working_queue, queue_ref=queue_candidate_ref)
             _atomic_yaml(mask_manifest_path, manifest)
@@ -1383,18 +1697,52 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                 != 0
             ):
                 raise StageFailure("quality", "global quality evaluation failed")
+            quality_report = load_yaml_mapping(quality_path)
+            quality_summary = quality_report.get("summary")
+            if not isinstance(quality_summary, Mapping):
+                raise StageFailure("quality", "quality result summary is required")
+            quality_result = quality_summary.get("result")
+            failed_parts_value = quality_summary.get("failed_parts")
+            if not isinstance(failed_parts_value, int):
+                raise StageFailure("quality", "quality failed_parts must be an integer")
+            quality_artifact_sha256 = _artifact_digests(
+                _quality_artifact_paths(paths),
+                base_dir=base_dir,
+            )
+            if quality_result == "fail" and _has_global_quality_failure(quality_report):
+                quality_stage.update(
+                    {
+                        "status": "waiting_for_review",
+                        "request": _relative(quality_input_path, base_dir),
+                        "result": _relative(quality_path, base_dir),
+                        "artifact_sha256": quality_artifact_sha256,
+                        "manual_review_required": True,
+                    }
+                )
+                _stage(state, "refinement")["status"] = "blocked"
+                if queue_path.read_bytes() != queue_bytes:
+                    raise StageFailure("quality", "canonical queue changed during the run")
+                return _manual_review_result(state, paths, base_dir)
             quality_stage.update(
                 {
                     "status": "completed",
                     "request": _relative(quality_input_path, base_dir),
                     "result": _relative(quality_path, base_dir),
+                    "artifact_sha256": quality_artifact_sha256,
                 }
             )
             _atomic_yaml(paths.state, state)
 
+        current_stage = "refinement"
         refinement_stage = _stage(state, "refinement")
-        if refinement_stage.get("status") != "completed":
-            current_stage = "refinement"
+        if refinement_stage.get("status") == "completed":
+            _verify_stage_artifacts(
+                refinement_stage,
+                _refinement_artifact_paths(paths),
+                base_dir=base_dir,
+                stage_name="refinement",
+            )
+        else:
             refinement_stage["status"] = "running"
             quality_ref = quality_stage.get("result")
             if not isinstance(quality_ref, str):
@@ -1439,6 +1787,10 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
             _atomic_yaml(
                 paths.path("queue-candidates/diff-summary.yaml"),
                 _asset_diff(queue, final_queue),
+            )
+            refinement_stage["artifact_sha256"] = _artifact_digests(
+                _refinement_artifact_paths(paths),
+                base_dir=base_dir,
             )
             failed_parts = plan.get("summary", {}).get("failed_parts", 0)
             state["outcome"] = "refinement_required" if failed_parts else "completed"
@@ -1501,6 +1853,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inpainting-model-id")
     parser.add_argument("--inpainting-model-revision")
     parser.add_argument("--inpainting-dtype", default="float32")
+    parser.add_argument("--inpainting-width", type=int)
+    parser.add_argument("--inpainting-height", type=int)
+    parser.add_argument("--inpainting-padding", type=int)
+    parser.add_argument("--inpainting-max-edge-continuity-score", type=float)
+    parser.add_argument("--inpainting-max-boundary-color-difference-score", type=float)
+    parser.add_argument("--inpainting-max-visual-reconstruction-difference-score", type=float)
+    parser.add_argument("--segmentation-gpu-memory-mb", type=int, default=0)
+    parser.add_argument("--inpainting-gpu-memory-mb", type=int, default=0)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--json", action="store_true")
     return parser
@@ -1515,6 +1875,7 @@ def main(argv: list[str] | None = None) -> int:
         queue = load_yaml_mapping(queue_path)
         _queue_assets(queue)
         _validate_queue_artifact_safety(queue)
+        inpainting_backend_config = _inpainting_config_from_args(args, base_dir)
         run_id = args.run_id or str(uuid.uuid4())
         if not RUN_ID_PATTERN.fullmatch(run_id):
             raise ValueError("run ID must contain only letters, digits, dot, underscore, or hyphen")
@@ -1528,6 +1889,7 @@ def main(argv: list[str] | None = None) -> int:
                 "output_dir": _relative(output, base_dir),
                 "segmentation_backend": args.segmentation_backend,
                 "inpainting_backend": args.inpainting_backend,
+                "inpainting_backend_config": inpainting_backend_config,
                 "model_load_attempted": False,
                 "file_changes": False,
             }

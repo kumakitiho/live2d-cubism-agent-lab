@@ -193,6 +193,105 @@ def test_mock_end_to_end_preserves_canonical_queue_and_masks(tmp_path: Path) -> 
     assert segmentation_candidate["selection_reason"] == "assignment_selected_rank_1"
 
 
+def test_inpainting_backend_defaults_and_cli_overrides(tmp_path: Path) -> None:
+    mock = orchestrator_module.build_inpainting_backend_config("mock", base_dir=tmp_path)
+    diffusers = orchestrator_module.build_inpainting_backend_config(
+        "diffusers",
+        base_dir=tmp_path,
+    )
+    flux = orchestrator_module.build_inpainting_backend_config(
+        "flux_fill",
+        base_dir=tmp_path,
+    )
+    overridden = orchestrator_module.build_inpainting_backend_config(
+        "diffusers",
+        base_dir=tmp_path,
+        width=768,
+        height=640,
+        padding=48,
+        max_edge_continuity_score=0.2,
+        max_boundary_color_difference_score=0.3,
+        max_visual_reconstruction_difference_score=0.4,
+    )
+
+    assert mock["model_size"] == [64, 64]
+    assert mock["padding"] == 2
+    assert mock["quality_thresholds"]["max_edge_continuity_score"] == 1.0
+    assert mock["quality_thresholds"]["max_boundary_color_difference_score"] == 1.0
+    assert mock["quality_thresholds"]["max_visual_reconstruction_difference_score"] == 1.0
+    assert diffusers["model_size"] == [512, 512]
+    assert diffusers["padding"] == 32
+    assert diffusers["quality_thresholds"] == (orchestrator_module.DEFAULT_QUALITY_THRESHOLDS)
+    assert flux["model_size"] == [1024, 1024]
+    assert flux["quality_thresholds"] == orchestrator_module.DEFAULT_QUALITY_THRESHOLDS
+    assert overridden["model_size"] == [768, 640]
+    assert overridden["padding"] == 48
+    assert overridden["quality_thresholds"]["max_edge_continuity_score"] == 0.2
+    assert overridden["quality_thresholds"]["max_boundary_color_difference_score"] == 0.3
+    assert overridden["quality_thresholds"]["max_visual_reconstruction_difference_score"] == 0.4
+
+
+def test_configuration_digest_includes_resolved_backend_defaults(tmp_path: Path) -> None:
+    args = orchestrator_module.build_parser().parse_args(_arguments(tmp_path))
+    limits = orchestrator_module.ResourceLimits()
+    first = orchestrator_module.build_inpainting_backend_config("mock", base_dir=tmp_path)
+    second = deepcopy(first)
+    second["model_size"] = [96, 96]
+
+    assert orchestrator_module._configuration_sha256(
+        args,
+        limits,
+        first,
+    ) != orchestrator_module._configuration_sha256(args, limits, second)
+
+
+def test_gpu_memory_estimates_reach_scheduled_tasks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fixture(tmp_path)
+    observed: dict[str, int] = {}
+    original_run = orchestrator_module.ResourceScheduler.run
+
+    def tracking_run(
+        scheduler: orchestrator_module.ResourceScheduler,
+        tasks: list[orchestrator_module.ScheduledTask],
+    ) -> dict[str, Any]:
+        observed.update({task.name: task.gpu_memory_mb for task in tasks})
+        return original_run(scheduler, tasks)
+
+    monkeypatch.setattr(orchestrator_module.ResourceScheduler, "run", tracking_run)
+
+    assert (
+        orchestrator_main(
+            _arguments(
+                tmp_path,
+                "--segmentation-gpu-memory-mb",
+                "1024",
+                "--inpainting-gpu-memory-mb",
+                "2048",
+                "--inpainting-width",
+                "80",
+                "--inpainting-height",
+                "72",
+                "--inpainting-padding",
+                "6",
+                "--inpainting-max-edge-continuity-score",
+                "0.8",
+                "--auto-approve-mock",
+                "--execute",
+            )
+        )
+        == 0
+    )
+    assert observed["segmentation"] == 1024
+    assert observed["inpaint:face"] == 2048
+    request = _load(tmp_path / "generated/runs/run-001/inpainting/face/request.yaml")
+    assert request["backend_config"]["model_size"] == [80, 72]
+    assert request["backend_config"]["padding"] == 6
+    assert request["backend_config"]["quality_thresholds"]["max_edge_continuity_score"] == 0.8
+
+
 def test_segmentation_only_stops_at_assignment_review(tmp_path: Path) -> None:
     queue = _fixture(tmp_path)
     before = queue.read_bytes()
@@ -387,6 +486,111 @@ def test_refinement_requeues_only_failed_part(tmp_path: Path) -> None:
     plan = _load(run_root / "refinement/plan.yaml")
     assert state["outcome"] == "refinement_required"
     assert [job["layer_id"] for job in plan["jobs"]] == ["empty"]
+
+
+def test_completed_stage_digest_manifests_cover_required_artifacts(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    assert orchestrator_main(_arguments(tmp_path, "--auto-approve-mock", "--execute")) == 0
+    state = _load(tmp_path / "generated/runs/run-001/run.yaml")
+
+    extraction = set(state["stages"]["extraction"]["artifact_sha256"])
+    inpainting = set(state["stages"]["inpainting"]["artifact_sha256"])
+    quality = set(state["stages"]["quality"]["artifact_sha256"])
+    refinement = set(state["stages"]["refinement"]["artifact_sha256"])
+    assert any(path.endswith("queue-candidates/after-extraction.yaml") for path in extraction)
+    assert any(path.endswith("extracted-parts/face.png") for path in extraction)
+    assert any(path.endswith("inpainting/face/request.yaml") for path in inpainting)
+    assert any(path.endswith("inpainting/face/result.yaml") for path in inpainting)
+    assert any(path.endswith("inpainting/face/selection.yaml") for path in inpainting)
+    assert any(path.endswith("quality/result.yaml") for path in quality)
+    assert any(path.endswith("quality/difference.png") for path in quality)
+    assert any(path.endswith("refinement/plan.yaml") for path in refinement)
+    assert any(path.endswith("queue-candidates/refined.yaml") for path in refinement)
+
+
+@pytest.mark.parametrize(
+    ("stage_name", "artifact"),
+    [
+        ("extraction", "extracted-parts/face.png"),
+        ("inpainting", "inpainting/face/request.yaml"),
+        ("quality", "quality/difference.png"),
+        ("refinement", "refinement/plan.yaml"),
+    ],
+)
+def test_resume_rejects_completed_stage_artifact_tampering(
+    tmp_path: Path,
+    stage_name: str,
+    artifact: str,
+) -> None:
+    _fixture(tmp_path)
+    args = _arguments(tmp_path, "--auto-approve-mock", "--execute")
+    assert orchestrator_main(args) == 0
+    artifact_path = tmp_path / "generated/runs/run-001" / artifact
+    artifact_path.write_bytes(artifact_path.read_bytes() + b"tampered")
+
+    assert orchestrator_main([*args, "--resume"]) == 2
+    state = _load(tmp_path / "generated/runs/run-001/run.yaml")
+    assert state["outcome"] == "failed"
+    assert state["stages"][stage_name]["status"] == "failed"
+
+
+def test_unattributed_global_quality_failure_waits_for_manual_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue = _fixture(tmp_path)
+    before = queue.read_bytes()
+    quality_calls = 0
+
+    def unattributed_quality(argv: list[str] | None = None) -> int:
+        nonlocal quality_calls
+        quality_calls += 1
+        assert argv is not None
+        base_dir = Path(argv[argv.index("--base-dir") + 1])
+        output = base_dir / argv[argv.index("--output") + 1]
+        difference = base_dir / argv[argv.index("--difference-output") + 1]
+        Image.new("RGBA", (10, 8), (0, 0, 0, 0)).save(difference)
+        write_yaml(
+            output,
+            {
+                "schema_version": 2,
+                "thresholds": {
+                    "max_visual_reconstruction_difference_score": 0.1,
+                },
+                "summary": {
+                    "result": "fail",
+                    "failed_parts": 1,
+                    "visual_reconstruction_difference_score": 0.5,
+                },
+            },
+        )
+        return 0
+
+    monkeypatch.setattr(orchestrator_module, "quality_main", unattributed_quality)
+
+    args = _arguments(tmp_path, "--auto-approve-mock", "--execute")
+    assert orchestrator_main(args) == 0
+    state = _load(tmp_path / "generated/runs/run-001/run.yaml")
+    Draft202012Validator(_load(Path("schemas/asset_generation_run.schema.yaml"))).validate(state)
+    assert state["outcome"] == "manual_review_required"
+    assert state["stages"]["quality"]["status"] == "waiting_for_review"
+    assert state["stages"]["quality"]["manual_review_required"] is True
+    assert state["stages"]["refinement"]["status"] == "blocked"
+    assert quality_calls == 1
+
+    assert orchestrator_main([*args, "--resume"]) == 0
+    assert quality_calls == 1
+    resumed = _load(tmp_path / "generated/runs/run-001/run.yaml")
+    assert resumed["outcome"] == "manual_review_required"
+
+    difference = tmp_path / "generated/runs/run-001/quality/difference.png"
+    difference.write_bytes(difference.read_bytes() + b"tampered")
+    assert orchestrator_main([*args, "--resume"]) == 2
+    assert quality_calls == 1
+    failed = _load(tmp_path / "generated/runs/run-001/run.yaml")
+    assert failed["outcome"] == "failed"
+    assert failed["stages"]["quality"]["status"] == "failed"
+    assert queue.read_bytes() == before
 
 
 def test_run_schema_and_sample_validate() -> None:

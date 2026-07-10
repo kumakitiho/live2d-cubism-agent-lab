@@ -20,7 +20,13 @@ properties:
   project: {type: string, minLength: 1}
   run_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'}
   outcome:
-    enum: [running, waiting_for_review, completed, refinement_required, failed]
+    enum:
+      - running
+      - waiting_for_review
+      - manual_review_required
+      - completed
+      - refinement_required
+      - failed
   canonical_queue: {$ref: '#/$defs/relative_path'}
   canonical_queue_sha256: {$ref: '#/$defs/sha256'}
   canonical_queue_content_sha256: {$ref: '#/$defs/sha256'}
@@ -76,6 +82,8 @@ $defs:
       selections: {type: array}
       queue_candidate: {$ref: '#/$defs/relative_path'}
       failed_parts: {type: integer, minimum: 0}
+      estimated_gpu_memory_mb: {type: integer, minimum: 0}
+      manual_review_required: {type: boolean}
       artifact_sha256:
         type: object
         minProperties: 1
