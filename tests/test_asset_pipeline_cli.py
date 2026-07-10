@@ -94,10 +94,14 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
     target.save(tmp_path / "target.png")
     target.save(tmp_path / "protect.png")
     Image.new("L", source.size, 0).save(tmp_path / "inpaint.png")
+    (tmp_path / "character_spec.yaml").write_text("model_scope: bust_up\n", encoding="utf-8")
+    (tmp_path / "feedback.yaml").write_text("issues: []\n", encoding="utf-8")
     queue = {
         "schema_version": 3,
         "project": "fixture",
         "source_image": {"path": "source.png"},
+        "character_spec": "character_spec.yaml",
+        "feedback_inputs": ["feedback.yaml"],
         "canvas": {"width": 6, "height": 4},
         "assets": [
             {
@@ -113,7 +117,21 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
                 "quality_status": "pending",
                 "refinement_attempts": 0,
                 "include_in_import": True,
-            }
+            },
+            {
+                "layer_id": "guide_only",
+                "target_mask": "target.png",
+                "protect_mask": "protect.png",
+                "inpaint_mask": "inpaint.png",
+                "source_file": "parts/missing-guide.png",
+                "generation_method": "extract",
+                "dependencies": [],
+                "draw_order": 2,
+                "overlap_margin_px": 0,
+                "quality_status": "pending",
+                "refinement_attempts": 0,
+                "include_in_import": False,
+            },
         ],
     }
     (tmp_path / "queue.yaml").write_text(
@@ -198,10 +216,89 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
         assert difference.getbbox() is None
     quality = load_yaml_mapping(tmp_path / "quality.yaml")
     assert quality["summary"]["result"] == "pass"
+    assert quality["summary"]["total_parts"] == 1
+    assert [part["layer_id"] for part in quality["parts"]] == ["fixture_part"]
     with Image.open(tmp_path / "motion.png") as preview:
         assert preview.size == (18, 4)
 
     original_source = source_path.read_bytes()
+    assert (
+        mask_main(
+            [
+                "queue.yaml",
+                "--base-dir",
+                str(tmp_path),
+                "--output",
+                "source.png",
+                "--execute",
+                "--force",
+            ]
+        )
+        == 2
+    )
+    assert source_path.read_bytes() == original_source
+
+    original_spec = (tmp_path / "character_spec.yaml").read_bytes()
+    assert (
+        mask_main(
+            [
+                "queue.yaml",
+                "--base-dir",
+                str(tmp_path),
+                "--output",
+                "character_spec.yaml",
+                "--execute",
+                "--force",
+            ]
+        )
+        == 2
+    )
+    assert (tmp_path / "character_spec.yaml").read_bytes() == original_spec
+
+    original_feedback = (tmp_path / "feedback.yaml").read_bytes()
+    assert (
+        mask_main(
+            [
+                "queue.yaml",
+                "--base-dir",
+                str(tmp_path),
+                "--output",
+                "feedback.yaml",
+                "--execute",
+                "--force",
+            ]
+        )
+        == 2
+    )
+    assert (tmp_path / "feedback.yaml").read_bytes() == original_feedback
+
+    assert (
+        mask_main(
+            [
+                "queue.yaml",
+                "--base-dir",
+                str(tmp_path),
+                "--output",
+                "mask-manifest.md",
+            ]
+        )
+        == 2
+    )
+    assert (
+        extractor_main(
+            [
+                str(manifest_path),
+                "--part",
+                "fixture_part",
+                "--base-dir",
+                str(tmp_path),
+                "--output",
+                "part-output.yaml",
+            ]
+        )
+        == 2
+    )
+
     assert (
         extractor_main(
             [
@@ -221,6 +318,25 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
     assert source_path.read_bytes() == original_source
 
     original_target = (tmp_path / "target.png").read_bytes()
+    assert (
+        recompose_main(
+            [
+                str(manifest_path),
+                "--base-dir",
+                str(tmp_path),
+                "--output",
+                "reconstructed-collision.png",
+                "--difference-output",
+                "target.png",
+                "--execute",
+                "--force",
+            ]
+        )
+        == 2
+    )
+    assert not (tmp_path / "reconstructed-collision.png").exists()
+    assert (tmp_path / "target.png").read_bytes() == original_target
+
     assert (
         quality_main(
             [
@@ -289,3 +405,19 @@ def test_refinement_execute_rejects_output_outside_base_dir(tmp_path: Path) -> N
         == 2
     )
     assert not output.exists()
+
+
+def test_refinement_outputs_require_yaml_suffixes(tmp_path: Path) -> None:
+    assert (
+        refinement_main(
+            [
+                "examples/asset_generation_queue.sample.yaml",
+                "examples/asset_quality.sample.yaml",
+                "--output",
+                str(tmp_path / "plan.png"),
+                "--refined-queue-output",
+                str(tmp_path / "queue.yaml"),
+            ]
+        )
+        == 2
+    )

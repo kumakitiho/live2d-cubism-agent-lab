@@ -218,6 +218,18 @@ def test_approved_job_requires_approved_dependency() -> None:
     assert any("requires approved dependency" in issue.message for issue in report.issues)
 
 
+def test_v3_job_operations_include_target_generation_method() -> None:
+    data = deepcopy(_sample())
+    jobs = data["jobs"]
+    assert isinstance(jobs, list)
+    jobs[0]["operations"] = ["segment"]
+
+    report = validate_asset_generation_queue(data)
+
+    assert not report.valid
+    assert any("must include target generation method" in issue.message for issue in report.issues)
+
+
 def test_legacy_v2_queue_remains_readable() -> None:
     data = deepcopy(_sample())
     data["schema_version"] = 2

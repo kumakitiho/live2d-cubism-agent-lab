@@ -2,13 +2,15 @@
 
 ## Generation methods
 
-- `extract`: sourceで見えている画素を切り出す。
-- `extract_and_edge_repair`: source画素を抽出し、alpha境界だけ補修する。
-- `transparency_fill`: source色を保ったまま透明穴・不足alphaだけ補完する。
+- `extract`: soft target maskをalphaへ乗算し、sourceで見えている画素をAA値ごと切り出す。
+- `extract_and_edge_repair`: target edge近傍だけを処理し、より不透明な内側画素からRGB fringeを補修する。透明穴は埋めない。
+- `transparency_fill`: binary inpaint mask内の完全透明穴だけを近傍色で補完する。AA edgeの既存画素は変更しない。
 - `inpaint`: 隠れ領域を補完する。必ずinferredかつreview requiredにする。
 - `redraw`: 人間または外部描画ツールが部品を描き直す。レビューを要求する。
 
 source画素を保持する優先順位は `extract > extract_and_edge_repair > transparency_fill > inpaint > redraw` とする。品質gateで失敗したpartだけを次の方式へ進め、合格partをまとめて再生成しない。
+
+non-zero `overlap_margin_px` はtarget maskの自動膨張を意味しない。desired coverageはbinary target maskと明示的なinpaint/edge-extension maskの和集合とし、extensionが空なら初回extractをoverlap不足だけでfailにしない。plannerはnon-zero overlapの可視partを `extract_and_edge_repair` から開始する。
 
 `draw_order` は背面から前面への順序で、小さい値を先に、大きい値を上へ合成する。hidden fillは対応するvisible baseより小さく、back hairはface・eyes・front hairより小さくする。
 

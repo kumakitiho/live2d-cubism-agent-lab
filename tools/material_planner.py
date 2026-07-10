@@ -63,6 +63,7 @@ class PartTemplate:
     inferred: bool = False
     review_required: bool = False
     required: bool = True
+    overlap_margin_px: int = 2
 
 
 CORE_PARTS = (
@@ -237,6 +238,9 @@ def _scope_parts(model_scope: str) -> tuple[PartTemplate, ...]:
 
 def _serialize_part(part: PartTemplate, index: int) -> dict[str, Any]:
     layer_id = part.layer_id
+    generation_method = part.generation_method
+    if generation_method == "extract" and part.overlap_margin_px > 0:
+        generation_method = "extract_and_edge_repair"
     instruction = (
         f"Create only the {part.role} part ({part.side}) on a transparent background, "
         "aligned to the source canvas."
@@ -248,7 +252,7 @@ def _serialize_part(part: PartTemplate, index: int) -> dict[str, Any]:
         "layer_name": layer_id,
         "role": part.role,
         "side": part.side,
-        "generation_method": part.generation_method,
+        "generation_method": generation_method,
         "inferred": part.inferred,
         "review_required": part.review_required,
         "required": part.required,
@@ -256,6 +260,7 @@ def _serialize_part(part: PartTemplate, index: int) -> dict[str, Any]:
         "target_mask": f"generated/masks/{layer_id}.target.png",
         "protect_mask": f"generated/masks/{layer_id}.protect.png",
         "inpaint_mask": f"generated/masks/{layer_id}.inpaint.png",
+        "overlap_margin_px": part.overlap_margin_px,
         "prompt_id": f"part-{layer_id}",
         "prompt": {
             "instruction": instruction,

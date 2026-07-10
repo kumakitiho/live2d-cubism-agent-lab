@@ -12,6 +12,8 @@ import yaml
 from tools.artifact_validation import load_yaml_mapping
 from tools.asset_pipeline_common import (
     is_positive_int,
+    referenced_artifact_paths,
+    require_output_suffix,
     resolve_inside_base,
     validate_mask_manifest,
     write_yaml,
@@ -109,8 +111,25 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("queue derivatives.mask_manifest or --output is required")
             output_value = configured_output
         output = resolve_inside_base(base_dir, output_value, "mask manifest output")
-        if output == queue_path:
-            raise ValueError("mask manifest output must not overwrite the canonical queue")
+        require_output_suffix(output, {".yaml", ".yml"}, "mask manifest output")
+        protected_paths = referenced_artifact_paths(
+            queue,
+            base_dir,
+            document_path=queue_path,
+        )
+        derivatives = queue.get("derivatives")
+        owned_output = (
+            derivatives.get("mask_manifest") if isinstance(derivatives, Mapping) else None
+        )
+        if isinstance(owned_output, str):
+            protected_paths.discard(
+                resolve_inside_base(base_dir, owned_output, "derivatives.mask_manifest")
+            )
+        if output in protected_paths:
+            raise ValueError(
+                "mask manifest output must not overwrite source, part, mask, queue, "
+                "or another canonical derivative"
+            )
         if args.execute:
             write_yaml(output, manifest, force=args.force)
     except (FileExistsError, FileNotFoundError, OSError, ValueError, yaml.YAMLError) as exc:

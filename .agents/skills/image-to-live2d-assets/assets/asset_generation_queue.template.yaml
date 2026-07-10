@@ -36,7 +36,7 @@ assets:
     protect_mask: generated/masks/eye_white_L.protect.png
     inpaint_mask: generated/masks/eye_white_L.inpaint.png
     prompt_id: part-eye-white-L
-    generation_method: extract
+    generation_method: extract_and_edge_repair
     dependencies: []
     draw_order: 50
     overlap_margin_px: 2
@@ -57,7 +57,7 @@ assets:
     protect_mask: generated/masks/eye_white_R.protect.png
     inpaint_mask: generated/masks/eye_white_R.inpaint.png
     prompt_id: part-eye-white-R
-    generation_method: extract
+    generation_method: extract_and_edge_repair
     dependencies: []
     draw_order: 60
     overlap_margin_px: 2
@@ -99,7 +99,7 @@ assets:
     protect_mask: generated/masks/hair_back.protect.png
     inpaint_mask: generated/masks/hair_back.inpaint.png
     prompt_id: part-hair-back
-    generation_method: extract
+    generation_method: extract_and_edge_repair
     dependencies: []
     draw_order: 10
     overlap_margin_px: 3
@@ -120,7 +120,7 @@ assets:
     protect_mask: generated/masks/torso_base.protect.png
     inpaint_mask: generated/masks/torso_base.inpaint.png
     prompt_id: part-torso-base
-    generation_method: extract
+    generation_method: extract_and_edge_repair
     dependencies: []
     draw_order: 20
     overlap_margin_px: 4
@@ -156,7 +156,7 @@ jobs:
   - id: eyes
     part_family: eyes
     targets: [eye_white_L, eye_white_R]
-    operations: [segment, mask_extract]
+    operations: [segment, extract_and_edge_repair]
     can_run_in_parallel: true
     depends_on: []
     feedback_refs: []
@@ -174,7 +174,7 @@ jobs:
   - id: hair
     part_family: hair
     targets: [hair_back]
-    operations: [segment, mask_extract]
+    operations: [segment, extract_and_edge_repair]
     can_run_in_parallel: true
     depends_on: []
     feedback_refs: []
@@ -183,7 +183,7 @@ jobs:
   - id: body
     part_family: body
     targets: [torso_base]
-    operations: [segment, mask_extract]
+    operations: [segment, extract_and_edge_repair]
     can_run_in_parallel: true
     depends_on: []
     feedback_refs: []

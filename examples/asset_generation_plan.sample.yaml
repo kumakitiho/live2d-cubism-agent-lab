@@ -15,7 +15,7 @@ parts:
     layer_name: face_base
     role: face_base
     side: C
-    generation_method: extract
+    generation_method: extract_and_edge_repair
     inferred: false
     review_required: false
     required: true
@@ -23,6 +23,7 @@ parts:
     target_mask: generated/masks/face_base.target.png
     protect_mask: generated/masks/face_base.protect.png
     inpaint_mask: generated/masks/face_base.inpaint.png
+    overlap_margin_px: 2
     prompt_id: part-face_base
     prompt:
       instruction: Create only the face_base part on a transparent, source-aligned canvas.
@@ -41,6 +42,7 @@ parts:
     target_mask: generated/masks/face_hidden_fill.target.png
     protect_mask: generated/masks/face_hidden_fill.protect.png
     inpaint_mask: generated/masks/face_hidden_fill.inpaint.png
+    overlap_margin_px: 2
     prompt_id: part-face_hidden_fill
     prompt:
       instruction: Conservatively infer only the hidden face pixels on a transparent, source-aligned canvas.

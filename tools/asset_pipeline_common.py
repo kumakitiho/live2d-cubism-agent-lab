@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import yaml
 from PIL import Image
@@ -24,6 +25,14 @@ QUALITY_CHECKS = {
     "overlap_deficit_px",
     "source_pixel_difference",
 }
+
+ARTIFACT_PATH_FIELDS = (
+    "source_file",
+    "output_file",
+    "target_mask",
+    "protect_mask",
+    "inpaint_mask",
+)
 
 
 def is_positive_int(value: object) -> bool:
@@ -52,14 +61,164 @@ def load_rgba(path: Path) -> Image.Image:
         return image.convert("RGBA")
 
 
-def load_mask(path: Path, canvas: tuple[int, int]) -> Image.Image:
+def _load_grayscale_mask(path: Path, canvas: tuple[int, int]) -> Image.Image:
     if not path.is_file():
         raise FileNotFoundError(f"mask not found: {path}")
     with Image.open(path) as image:
         mask = image.convert("L")
     if mask.size != canvas:
         raise ValueError(f"mask canvas mismatch: {path}: {mask.size} != {canvas}")
-    return mask.point(lambda value: 255 if value > 0 else 0, mode="L")
+    return mask
+
+
+def load_soft_mask(path: Path, canvas: tuple[int, int]) -> Image.Image:
+    """Load an antialiased grayscale mask without changing its coverage values."""
+    return _load_grayscale_mask(path, canvas)
+
+
+def load_binary_mask(
+    path: Path,
+    canvas: tuple[int, int],
+    *,
+    alpha_threshold: int = 1,
+) -> Image.Image:
+    """Load a mask for boolean membership checks using an explicit alpha threshold."""
+    if not is_positive_int(alpha_threshold) or alpha_threshold > 255:
+        raise ValueError("alpha_threshold must be an integer from 1 to 255")
+    mask = _load_grayscale_mask(path, canvas)
+    return mask.point(
+        lambda value: 255 if value >= alpha_threshold else 0,
+        mode="L",
+    )
+
+
+def load_mask(path: Path, canvas: tuple[int, int]) -> Image.Image:
+    """Backward-compatible binary-mask alias; new code must choose soft or binary explicitly."""
+    return load_binary_mask(path, canvas, alpha_threshold=1)
+
+
+def import_parts(data: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    parts = data.get("parts")
+    if not isinstance(parts, list):
+        raise ValueError("parts must be a list")
+    result: list[Mapping[str, Any]] = []
+    for index, part in enumerate(parts):
+        if not isinstance(part, Mapping):
+            raise ValueError(f"parts[{index}] must be a mapping")
+        if part.get("include_in_import") is True:
+            result.append(part)
+    return result
+
+
+def referenced_artifact_paths(
+    data: Mapping[str, Any],
+    base_dir: Path,
+    *,
+    document_path: Path | None = None,
+) -> set[Path]:
+    """Resolve source, part, mask, and canonical derivative paths owned by an artifact."""
+    paths: set[Path] = set()
+    if document_path is not None:
+        paths.add(document_path.resolve())
+
+    source_image = data.get("source_image")
+    if isinstance(source_image, Mapping):
+        source_value = source_image.get("path")
+        if isinstance(source_value, str) and source_value.strip():
+            paths.add(resolve_inside_base(base_dir, source_value, "source_image.path"))
+    elif isinstance(source_image, str) and source_image.strip():
+        paths.add(resolve_inside_base(base_dir, source_image, "source_image"))
+
+    character_spec = data.get("character_spec")
+    if isinstance(character_spec, str) and character_spec.strip():
+        paths.add(resolve_inside_base(base_dir, character_spec, "character_spec"))
+
+    feedback_inputs = data.get("feedback_inputs")
+    if isinstance(feedback_inputs, list):
+        for index, value in enumerate(feedback_inputs):
+            if isinstance(value, str) and value.strip():
+                paths.add(
+                    resolve_inside_base(base_dir, value, f"feedback_inputs[{index}]")
+                )
+
+    for collection_name in ("parts", "assets"):
+        collection = data.get(collection_name)
+        if not isinstance(collection, list):
+            continue
+        for index, item in enumerate(collection):
+            if not isinstance(item, Mapping):
+                continue
+            for field in ARTIFACT_PATH_FIELDS:
+                value = item.get(field)
+                if isinstance(value, str) and value.strip():
+                    paths.add(
+                        resolve_inside_base(
+                            base_dir,
+                            value,
+                            f"{collection_name}[{index}].{field}",
+                        )
+                    )
+
+    derivatives = data.get("derivatives")
+    if isinstance(derivatives, Mapping):
+        for name, value in derivatives.items():
+            if isinstance(value, str) and value.strip():
+                paths.add(resolve_inside_base(base_dir, value, f"derivatives.{name}"))
+    return paths
+
+
+def require_output_suffix(path: Path, allowed: set[str], field: str) -> None:
+    normalized = {suffix.lower() for suffix in allowed}
+    if path.suffix.lower() not in normalized:
+        raise ValueError(f"{field} must use one of these suffixes: {sorted(normalized)}")
+
+
+def mask_manifest_protected_paths(
+    manifest: Mapping[str, Any],
+    base_dir: Path,
+    *,
+    manifest_path: Path,
+) -> set[Path]:
+    """Collect every input/owned path reachable from a mask manifest and its queue."""
+    paths = referenced_artifact_paths(
+        manifest,
+        base_dir,
+        document_path=manifest_path,
+    )
+    derived_from = manifest.get("derived_from")
+    if not isinstance(derived_from, Mapping):
+        return paths
+    queue_ref = derived_from.get("asset_generation_queue")
+    if not isinstance(queue_ref, str) or not queue_ref.strip() or queue_ref == "<in-memory>":
+        return paths
+    queue_path = resolve_inside_base(base_dir, queue_ref, "asset generation queue")
+    queue = load_yaml_mapping(queue_path)
+    paths.update(
+        referenced_artifact_paths(
+            queue,
+            base_dir,
+            document_path=queue_path,
+        )
+    )
+    return paths
+
+
+def atomic_save_png(
+    image: Image.Image,
+    path: Path,
+    *,
+    force: bool = False,
+) -> None:
+    require_output_suffix(path, {".png"}, "PNG output")
+    if path.exists() and not force:
+        raise FileExistsError(f"refusing to overwrite without --force: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        image.save(temporary, format="PNG")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def require_same_canvas(images: Mapping[str, Image.Image]) -> tuple[int, int]:
@@ -436,6 +595,7 @@ def load_and_validate_mask_manifest(
 
 
 def write_yaml(path: Path, data: Mapping[str, Any], *, force: bool = False) -> None:
+    require_output_suffix(path, {".yaml", ".yml"}, "YAML output")
     if path.exists() and not force:
         raise FileExistsError(f"refusing to overwrite without --force: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)

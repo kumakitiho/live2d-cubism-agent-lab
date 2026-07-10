@@ -9,9 +9,13 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 from tools.asset_pipeline_common import (
+    atomic_save_png,
+    import_parts,
     load_and_validate_mask_manifest,
     load_rgba,
+    mask_manifest_protected_paths,
     require_manifest_canvas,
+    require_output_suffix,
     resolve_inside_base,
 )
 
@@ -63,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         parts_data = manifest.get("parts")
         if not isinstance(source_data, dict) or not isinstance(parts_data, list):
             raise ValueError("mask manifest source_image and parts are required")
+        import_part_data = import_parts(manifest)
         source_value = source_data.get("path")
         if not isinstance(source_value, str):
             raise ValueError("source_image.path is required")
@@ -73,17 +78,21 @@ def main(argv: list[str] | None = None) -> int:
             str(args.difference_output),
             "difference output",
         )
+        require_output_suffix(output_path, {".png"}, "reconstructed output")
+        require_output_suffix(difference_path, {".png"}, "difference output")
         if output_path == difference_path:
             raise ValueError("reconstructed and difference outputs must use different paths")
         manifest_path = resolve_inside_base(base_dir, str(args.mask_manifest), "mask manifest")
-        protected_inputs = {source_path, manifest_path}
-        for part in parts_data:
-            if isinstance(part, dict) and isinstance(part.get("output_file"), str):
-                protected_inputs.add(
-                    resolve_inside_base(base_dir, part["output_file"], "part output_file")
-                )
+        protected_inputs = mask_manifest_protected_paths(
+            manifest,
+            base_dir,
+            manifest_path=manifest_path,
+        )
         if output_path in protected_inputs or difference_path in protected_inputs:
-            raise ValueError("recomposition outputs must not overwrite source, part, or manifest")
+            raise ValueError(
+                "recomposition outputs must not overwrite source, part, mask, manifest, "
+                "queue, or canonical derivatives"
+            )
         if args.execute:
             existing = [path for path in (output_path, difference_path) if path.exists()]
             if existing and not args.force:
@@ -91,9 +100,7 @@ def main(argv: list[str] | None = None) -> int:
             source = load_rgba(source_path)
             require_manifest_canvas(source, manifest, "source image")
             part_images: list[tuple[int, Image.Image]] = []
-            for part in parts_data:
-                if not isinstance(part, dict) or part.get("include_in_import") is not True:
-                    continue
+            for part in import_part_data:
                 output_value = part.get("output_file")
                 draw_order = part.get("draw_order")
                 if not isinstance(output_value, str) or not isinstance(draw_order, int):
@@ -102,10 +109,8 @@ def main(argv: list[str] | None = None) -> int:
                 part_images.append((draw_order, load_rgba(part_path)))
             reconstructed = recompose_parts(source.size, part_images)
             difference = difference_image(source, reconstructed)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            difference_path.parent.mkdir(parents=True, exist_ok=True)
-            reconstructed.save(output_path, format="PNG")
-            difference.save(difference_path, format="PNG")
+            atomic_save_png(reconstructed, output_path, force=args.force)
+            atomic_save_png(difference, difference_path, force=args.force)
     except (FileExistsError, FileNotFoundError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 2

@@ -66,6 +66,12 @@ def test_plan_uses_three_masks_and_draw_order(source_image: Path) -> None:
     assert all(part["protect_mask"].endswith(".protect.png") for part in parts)
     assert all(part["inpaint_mask"].endswith(".inpaint.png") for part in parts)
     assert all(isinstance(part["draw_order"], int) for part in parts)
+    assert all(isinstance(part["overlap_margin_px"], int) for part in parts)
+    assert all(
+        part["generation_method"] != "extract"
+        for part in parts
+        if part["overlap_margin_px"] > 0
+    )
 
 
 def test_draw_order_places_hidden_and_back_hair_behind_visible_face(source_image: Path) -> None:

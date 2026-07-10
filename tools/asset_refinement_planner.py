@@ -10,6 +10,8 @@ from typing import Any
 from tools.artifact_validation import load_yaml_mapping
 from tools.asset_pipeline_common import (
     GENERATION_METHODS,
+    referenced_artifact_paths,
+    require_output_suffix,
     resolve_inside_base,
     validate_asset_quality,
 )
@@ -21,6 +23,31 @@ def next_generation_method(current: str) -> str:
         raise ValueError(f"unknown generation method: {current}")
     index = GENERATION_METHODS.index(current)
     return GENERATION_METHODS[min(index + 1, len(GENERATION_METHODS) - 1)]
+
+
+FAILED_CHECK_METHOD_HINTS = {
+    "white_halo_px": "extract_and_edge_repair",
+    "source_pixel_difference": "extract_and_edge_repair",
+    "transparent_hole_px": "transparency_fill",
+    "overlap_deficit_px": "transparency_fill",
+}
+
+
+def select_generation_method(current: str, failed_checks: list[str]) -> str:
+    if current not in GENERATION_METHODS:
+        raise ValueError(f"unknown generation method: {current}")
+    current_index = GENERATION_METHODS.index(current)
+    hinted_methods = {
+        FAILED_CHECK_METHOD_HINTS[check]
+        for check in failed_checks
+        if check in FAILED_CHECK_METHOD_HINTS
+    }
+    forward_hints = [
+        method for method in hinted_methods if GENERATION_METHODS.index(method) > current_index
+    ]
+    if forward_hints:
+        return max(forward_hints, key=GENERATION_METHODS.index)
+    return next_generation_method(current)
 
 
 def failed_layer_ids(quality: Mapping[str, Any]) -> set[str]:
@@ -93,13 +120,18 @@ def build_refinement_plan(
             raise ValueError(
                 f"asset {layer_id} reached the automatic refinement limit; manual review required"
             )
+        failed_checks = deepcopy(quality_part.get("failed_checks", []))
+        if not isinstance(failed_checks, list) or not all(
+            isinstance(check, str) for check in failed_checks
+        ):
+            raise ValueError(f"quality part {layer_id} requires failed_checks")
         jobs.append(
             {
                 "layer_id": layer_id,
                 "from_generation_method": current,
-                "to_generation_method": next_generation_method(current),
+                "to_generation_method": select_generation_method(current, failed_checks),
                 "refinement_attempt": attempts + 1,
-                "failed_checks": deepcopy(quality_part.get("failed_checks", [])),
+                "failed_checks": failed_checks,
                 "requested_action": "regenerate_failed_part_only",
             }
         )
@@ -134,17 +166,45 @@ def apply_refinement_plan(
         if refinement is None:
             continue
         asset["generation_method"] = refinement["to_generation_method"]
+        if asset["generation_method"] == "inpaint":
+            asset["inferred"] = True
+            asset["review_required"] = True
+        elif asset["generation_method"] == "redraw":
+            asset["review_required"] = True
         asset["quality_status"] = "pending"
         asset["refinement_attempts"] = refinement["refinement_attempt"]
         asset["readiness"] = "planned"
     if isinstance(queue_jobs, list):
         failed = set(refinements)
+        asset_methods = {
+            str(asset.get("layer_id")): asset.get("generation_method")
+            for asset in assets
+            if isinstance(asset, Mapping)
+        }
+        generation_operation_names = set(GENERATION_METHODS) | {"mask_extract"}
         for job in queue_jobs:
             if not isinstance(job, dict):
                 continue
             targets = job.get("targets")
             if not isinstance(targets, list) or not (failed & set(targets)):
                 continue
+            operations = job.get("operations")
+            preserved_operations = (
+                [
+                    operation
+                    for operation in operations
+                    if isinstance(operation, str)
+                    and operation not in generation_operation_names
+                ]
+                if isinstance(operations, list)
+                else []
+            )
+            target_methods = [
+                asset_methods[str(target)]
+                for target in targets
+                if asset_methods.get(str(target)) in GENERATION_METHODS
+            ]
+            job["operations"] = list(dict.fromkeys([*preserved_operations, *target_methods]))
             job["status"] = "planned"
             validation = job.get("validation")
             if isinstance(validation, dict):
@@ -156,7 +216,6 @@ def apply_refinement_plan(
         if isinstance(validation, dict):
             for key in validation:
                 validation[key] = False
-        merge_gate["ready_for_manifest_merge"] = False
     return result
 
 
@@ -187,13 +246,23 @@ def main(argv: list[str] | None = None) -> int:
             str(args.refined_queue_output),
             "refined queue output",
         )
-        if output_path in {queue_path, quality_path} or refined_queue_path in {
-            queue_path,
-            quality_path,
-        }:
-            raise ValueError("refinement outputs must not overwrite queue or quality inputs")
+        require_output_suffix(output_path, {".yaml", ".yml"}, "refinement plan output")
+        require_output_suffix(refined_queue_path, {".yaml", ".yml"}, "refined queue output")
         queue = load_yaml_mapping(queue_path)
         quality = load_yaml_mapping(quality_path)
+        protected_inputs = referenced_artifact_paths(
+            queue,
+            base_dir,
+            document_path=queue_path,
+        )
+        protected_inputs.add(quality_path)
+        if output_path == refined_queue_path:
+            raise ValueError("refinement outputs must use different paths")
+        if output_path in protected_inputs or refined_queue_path in protected_inputs:
+            raise ValueError(
+                "refinement outputs must not overwrite queue, quality, source, character spec, "
+                "feedback, part, mask, or canonical derivatives"
+            )
         quality_issues = validate_asset_quality(quality)
         if quality_issues:
             raise ValueError("; ".join(issue.format() for issue in quality_issues))

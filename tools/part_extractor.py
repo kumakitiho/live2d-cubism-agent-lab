@@ -7,11 +7,14 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 from tools.asset_pipeline_common import (
+    atomic_save_png,
     find_part,
     load_and_validate_mask_manifest,
-    load_mask,
     load_rgba,
+    load_soft_mask,
+    mask_manifest_protected_paths,
     require_manifest_canvas,
+    require_output_suffix,
     resolve_inside_base,
 )
 
@@ -56,23 +59,31 @@ def main(argv: list[str] | None = None) -> int:
         source_path = resolve_inside_base(base_dir, source_value, "source_file")
         target_mask_path = resolve_inside_base(base_dir, target_mask_value, "target_mask")
         output_path = resolve_inside_base(base_dir, output_value, "output")
+        require_output_suffix(output_path, {".png"}, "part output")
         manifest_path = resolve_inside_base(base_dir, str(args.mask_manifest), "mask manifest")
-        protected_inputs = {source_path, target_mask_path, manifest_path}
-        for field in ("protect_mask", "inpaint_mask"):
-            value = part.get(field)
-            if isinstance(value, str):
-                protected_inputs.add(resolve_inside_base(base_dir, value, field))
+        protected_inputs = mask_manifest_protected_paths(
+            manifest,
+            base_dir,
+            manifest_path=manifest_path,
+        )
+        designated_output = part.get("output_file")
+        if isinstance(designated_output, str):
+            protected_inputs.discard(
+                resolve_inside_base(base_dir, designated_output, "part output_file")
+            )
         if output_path in protected_inputs:
-            raise ValueError("part output must not overwrite source, mask, or manifest inputs")
+            raise ValueError(
+                "part output must not overwrite source, another part, mask, manifest, "
+                "queue, or canonical derivatives"
+            )
         if args.execute:
             if output_path.exists() and not args.force:
                 raise FileExistsError(f"refusing to overwrite without --force: {output_path}")
             source = load_rgba(source_path)
             require_manifest_canvas(source, manifest, "source image")
-            target_mask = load_mask(target_mask_path, source.size)
+            target_mask = load_soft_mask(target_mask_path, source.size)
             result_image = extract_rgba(source, target_mask)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            result_image.save(output_path, format="PNG")
+            atomic_save_png(result_image, output_path, force=args.force)
     except (FileExistsError, FileNotFoundError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 2

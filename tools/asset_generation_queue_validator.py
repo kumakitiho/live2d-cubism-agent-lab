@@ -185,6 +185,7 @@ def validate_asset_generation_queue(
 
     asset_ids: set[str] = set()
     asset_readiness: dict[str, object] = {}
+    asset_generation_methods: dict[str, object] = {}
     asset_dependencies: dict[str, set[str]] = {}
     draw_orders: set[int] = set()
     assets = data.get("assets")
@@ -225,6 +226,7 @@ def validate_asset_generation_queue(
                     issues.append(ArtifactIssue(f"{base}.layer_id", f"duplicate id: {layer_id}"))
                 asset_ids.add(layer_id)
                 asset_readiness[layer_id] = asset.get("readiness")
+                asset_generation_methods[layer_id] = asset.get("generation_method")
             else:
                 issues.append(ArtifactIssue(f"{base}.layer_id", "must be a non-empty string"))
                 continue
@@ -379,6 +381,19 @@ def validate_asset_generation_queue(
                     issues.append(
                         ArtifactIssue(f"{base}.{key}", "must be a non-empty list of strings")
                     )
+            if schema_version == 3 and isinstance(job.get("targets"), list) and isinstance(
+                job.get("operations"), list
+            ):
+                operations = set(job["operations"])
+                for target in job["targets"]:
+                    method = asset_generation_methods.get(str(target))
+                    if method in GENERATION_METHODS and method not in operations:
+                        issues.append(
+                            ArtifactIssue(
+                                f"{base}.operations",
+                                f"must include target generation method {method}: {target}",
+                            )
+                        )
             feedback_refs = job.get("feedback_refs")
             if not isinstance(feedback_refs, list) or not all(
                 isinstance(item, str) and item.strip() for item in feedback_refs
