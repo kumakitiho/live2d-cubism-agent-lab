@@ -1,0 +1,28 @@
+schema_version: 1
+project: sample-one-image-model
+run_id: inpaint-face-hidden-fill-001
+layer_id: face_hidden_fill
+source_image: assets/source/character.png
+current_part: generated/parts/face_hidden_fill.png
+target_mask: generated/masks/face_hidden_fill.target.png
+protect_mask: generated/masks/face_hidden_fill.protect.png
+edge_extension_mask: generated/masks/face_hidden_fill.edge-extension.png
+inpaint_mask: generated/masks/face_hidden_fill.inpaint.png
+prompt: >-
+  Preserve the source character identity, line style, palette, and lighting. Complete only the
+  hidden face pixels for face_hidden_fill on the same transparent canvas and origin. Only modify
+  the masked region.
+negative_prompt: >-
+  full character regeneration, pose change, face identity change, eye color change, line thickness
+  change, lighting direction change, unrelated accessories, opaque background, canvas resize,
+  unmasked region modification
+backend: mock
+backend_config:
+  padding: 32
+  model_size: [512, 512]
+  local_files_only: true
+candidate_count: 4
+seed_policy:
+  mode: explicit_list
+  seeds: [101, 102, 103, 104]
+output_dir: generated/inpainting/inpaint-face-hidden-fill-001

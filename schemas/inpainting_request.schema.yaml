@@ -1,0 +1,58 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Live2D local generative inpainting request
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - project
+  - run_id
+  - layer_id
+  - source_image
+  - current_part
+  - target_mask
+  - protect_mask
+  - edge_extension_mask
+  - inpaint_mask
+  - prompt
+  - negative_prompt
+  - backend
+  - backend_config
+  - candidate_count
+  - seed_policy
+  - output_dir
+properties:
+  schema_version: {const: 1}
+  project: {type: string, minLength: 1}
+  run_id: {type: string, minLength: 1}
+  layer_id: {type: string, minLength: 1}
+  source_image: {type: string, pattern: '\.[Pp][Nn][Gg]$'}
+  current_part: {type: string, pattern: '\.[Pp][Nn][Gg]$'}
+  target_mask: {type: string, pattern: '\.[Pp][Nn][Gg]$'}
+  protect_mask: {type: string, pattern: '\.[Pp][Nn][Gg]$'}
+  edge_extension_mask: {type: string, pattern: '\.[Pp][Nn][Gg]$'}
+  inpaint_mask: {type: string, pattern: '\.[Pp][Nn][Gg]$'}
+  prompt: {type: string, minLength: 1}
+  negative_prompt: {type: string}
+  backend: {enum: [mock, diffusers, flux_fill]}
+  backend_config:
+    type: object
+    description: Backend-specific options; local_files_only defaults to true.
+  candidate_count: {type: integer, minimum: 1}
+  seed_policy:
+    oneOf:
+      - type: object
+        additionalProperties: false
+        required: [mode, seeds]
+        properties:
+          mode: {const: explicit_list}
+          seeds:
+            type: array
+            minItems: 1
+            items: {type: integer, minimum: 0}
+      - type: object
+        additionalProperties: false
+        required: [mode, base_seed]
+        properties:
+          mode: {const: increment}
+          base_seed: {type: integer, minimum: 0}
+  output_dir: {type: string, minLength: 1}
