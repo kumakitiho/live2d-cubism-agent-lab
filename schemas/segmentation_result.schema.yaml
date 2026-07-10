@@ -1,0 +1,156 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Live2D segmentation candidate result
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - status
+  - project
+  - run_id
+  - asset_generation_queue
+  - asset_generation_queue_sha256
+  - asset_generation_queue_content_sha256
+  - source_image
+  - source_image_sha256
+  - canvas
+  - backend
+  - backend_provenance
+  - binary_threshold
+  - requests
+  - candidates
+  - summary
+properties:
+  schema_version: {const: 1}
+  status: {enum: [planned, completed]}
+  project: {type: string, minLength: 1}
+  run_id: {type: string, minLength: 1}
+  asset_generation_queue: {type: string, minLength: 1}
+  asset_generation_queue_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  asset_generation_queue_content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  source_image:
+    type: object
+    additionalProperties: false
+    required: [path]
+    properties:
+      path: {type: string, minLength: 1}
+  source_image_sha256:
+    oneOf:
+      - {type: string, pattern: '^[0-9a-f]{64}$'}
+      - {type: 'null'}
+  canvas:
+    type: object
+    additionalProperties: false
+    required: [width, height, origin]
+    properties:
+      width: {type: integer, minimum: 1}
+      height: {type: integer, minimum: 1}
+      origin:
+        type: array
+        prefixItems: [{const: 0}, {const: 0}]
+        minItems: 2
+        maxItems: 2
+  backend: {enum: [mock, sam2, grounded-sam2]}
+  backend_provenance: {type: object}
+  binary_threshold: {type: integer, minimum: 1, maximum: 255}
+  requests:
+    type: array
+    items:
+      type: object
+      required:
+        - layer_id
+        - side
+        - semantic_prompt
+        - point_prompts
+        - box_prompt
+        - existing_mask
+        - candidate_count
+        - minimum_confidence
+      properties:
+        layer_id: {type: string, minLength: 1}
+        side: {enum: [L, R, C, none]}
+        semantic_prompt: {type: string}
+        point_prompts: {type: array}
+        box_prompt:
+          oneOf:
+            - {type: 'null'}
+            - {type: array, minItems: 4, maxItems: 4}
+        existing_mask: {type: boolean}
+        candidate_count: {type: integer, minimum: 1}
+        minimum_confidence: {type: number, minimum: 0, maximum: 1}
+  candidates:
+    type: array
+    items: {$ref: '#/$defs/candidate'}
+  summary:
+    type: object
+    additionalProperties: false
+    required: [request_count, candidate_count, automatic_assignment, review_required]
+    properties:
+      request_count: {type: integer, minimum: 1}
+      candidate_count: {type: integer, minimum: 0}
+      automatic_assignment: {const: false}
+      review_required: {const: true}
+$defs:
+  candidate:
+    type: object
+    additionalProperties: false
+    required:
+      - candidate_id
+      - layer_id
+      - semantic_prompt
+      - mask_file
+      - soft_mask_file
+      - binary_mask_file
+      - preview_file
+      - confidence
+      - stability_score
+      - bbox_xyxy
+      - area_px
+      - source_backend
+      - model_id
+      - model_revision
+      - prompt_provenance
+      - side
+      - role
+      - semantic_assignment
+      - expected_region
+      - draw_order
+      - requires_review
+      - rejection_reasons
+    properties:
+      candidate_id: {type: string, minLength: 1}
+      layer_id: {type: string, minLength: 1}
+      semantic_prompt: {type: string}
+      mask_file: {type: string, minLength: 1}
+      soft_mask_file: {type: string, minLength: 1}
+      binary_mask_file: {type: string, minLength: 1}
+      preview_file: {type: string, minLength: 1}
+      confidence: {type: number, minimum: 0, maximum: 1}
+      stability_score: {type: number, minimum: 0, maximum: 1}
+      bbox_xyxy:
+        type: array
+        minItems: 4
+        maxItems: 4
+        items: {type: integer, minimum: 0}
+      area_px: {type: integer, minimum: 0}
+      source_backend: {enum: [mock, sam2, grounded-sam2]}
+      model_id: {type: [string, 'null']}
+      model_revision: {type: [string, 'null']}
+      prompt_provenance: {type: object}
+      side: {enum: [L, R, C, none]}
+      role: {type: [string, 'null']}
+      semantic_assignment:
+        type: object
+        additionalProperties: false
+        required: [layer_id, role, side, status]
+        properties:
+          layer_id: {type: string, minLength: 1}
+          role: {type: [string, 'null']}
+          side: {enum: [L, R, C, none]}
+          status: {const: proposed}
+      expected_region: {type: [object, 'null']}
+      draw_order: {type: [integer, 'null']}
+      requires_review: {type: boolean}
+      rejection_reasons:
+        type: array
+        uniqueItems: true
+        items: {type: string, minLength: 1}

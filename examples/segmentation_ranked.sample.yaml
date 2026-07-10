@@ -1,0 +1,51 @@
+schema_version: 1
+status: ranked
+project: sample-one-image-model
+run_id: 00000000-0000-0000-0000-000000000001
+asset_generation_queue: examples/asset_generation_queue.sample.yaml
+asset_generation_queue_sha256: 214801fc5efe872440a216b8d5c09f21844f2b1af49e87d9bf1f000042825df9
+asset_generation_queue_content_sha256: be0acdab6a03e50ac97519f35638187c6e6003cb67cca872b655b2f03ddf919c
+source_image: {path: assets/source/character.png}
+source_image_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+canvas: {width: 2048, height: 2048, origin: [0, 0]}
+backend: mock
+candidates:
+  - candidate_id: eye_white_L-mock-001
+    layer_id: eye_white_L
+    semantic_prompt: left eye white
+    mask_file: generated/segmentation_result_masks/eye_white_L.mock-001.binary.png
+    soft_mask_file: generated/segmentation_result_masks/eye_white_L.mock-001.soft.png
+    binary_mask_file: generated/segmentation_result_masks/eye_white_L.mock-001.binary.png
+    preview_file: generated/segmentation_result_masks/eye_white_L.mock-001.preview.png
+    confidence: 0.96
+    stability_score: 0.94
+    bbox_xyxy: [620, 720, 870, 940]
+    area_px: 32000
+    source_backend: mock
+    model_id: mock-fixture-v1
+    model_revision: '1'
+    prompt_provenance: {}
+    side: L
+    role: eye_white
+    semantic_assignment: {layer_id: eye_white_L, role: eye_white, side: L, status: proposed}
+    expected_region: null
+    draw_order: 50
+    rank: 1
+    ranking_score: 0.91
+    ranking_metrics:
+      side_score: 1.0
+      expected_region_score: 0.5
+      source_alpha_overlap: 0.99
+      containment: 0.5
+      area_ratio: 0.00762939
+      taxonomy_score: 1.0
+      draw_order_score: 1.0
+      conflict_overlap: 0.0
+      symmetry_score: 0.95
+    requires_review: true
+    rejection_reasons: [candidate_competition]
+summary:
+  candidate_count: 1
+  layer_count: 1
+  needs_review_count: 1
+  automatic_assignment: false

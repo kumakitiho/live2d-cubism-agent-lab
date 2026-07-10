@@ -1,0 +1,82 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Ranked Live2D segmentation candidates
+type: object
+required:
+  - schema_version
+  - status
+  - project
+  - run_id
+  - asset_generation_queue
+  - asset_generation_queue_sha256
+  - asset_generation_queue_content_sha256
+  - source_image
+  - source_image_sha256
+  - canvas
+  - backend
+  - candidates
+  - summary
+properties:
+  schema_version: {const: 1}
+  status: {const: ranked}
+  project: {type: string, minLength: 1}
+  run_id: {type: string, minLength: 1}
+  asset_generation_queue: {type: string, minLength: 1}
+  asset_generation_queue_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  asset_generation_queue_content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  source_image: {type: object}
+  source_image_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  canvas: {type: object}
+  backend: {enum: [mock, sam2, grounded-sam2]}
+  candidates:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required:
+        - candidate_id
+        - layer_id
+        - confidence
+        - stability_score
+        - bbox_xyxy
+        - area_px
+        - source_backend
+        - rank
+        - ranking_score
+        - ranking_metrics
+        - requires_review
+        - rejection_reasons
+      properties:
+        candidate_id: {type: string, minLength: 1}
+        layer_id: {type: string, minLength: 1}
+        confidence: {type: number, minimum: 0, maximum: 1}
+        stability_score: {type: number, minimum: 0, maximum: 1}
+        bbox_xyxy: {type: array, minItems: 4, maxItems: 4}
+        area_px: {type: integer, minimum: 0}
+        source_backend: {enum: [mock, sam2, grounded-sam2]}
+        rank: {type: integer, minimum: 1}
+        ranking_score: {type: number, minimum: 0, maximum: 1}
+        ranking_metrics:
+          type: object
+          required:
+            - side_score
+            - expected_region_score
+            - source_alpha_overlap
+            - containment
+            - area_ratio
+            - taxonomy_score
+            - conflict_overlap
+            - symmetry_score
+        requires_review: {type: boolean}
+        rejection_reasons:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+  summary:
+    type: object
+    additionalProperties: false
+    required: [candidate_count, layer_count, needs_review_count, automatic_assignment]
+    properties:
+      candidate_count: {type: integer, minimum: 1}
+      layer_count: {type: integer, minimum: 1}
+      needs_review_count: {type: integer, minimum: 0}
+      automatic_assignment: {const: false}

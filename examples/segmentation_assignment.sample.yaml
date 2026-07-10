@@ -1,0 +1,37 @@
+schema_version: 1
+project: sample-one-image-model
+derived_from:
+  asset_generation_queue: examples/asset_generation_queue.sample.yaml
+  segmentation_ranked: examples/segmentation_ranked.sample.yaml
+  asset_generation_queue_sha256: 214801fc5efe872440a216b8d5c09f21844f2b1af49e87d9bf1f000042825df9
+  asset_generation_queue_content_sha256: be0acdab6a03e50ac97519f35638187c6e6003cb67cca872b655b2f03ddf919c
+  source_image_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+segmentation_run_id: 00000000-0000-0000-0000-000000000001
+review_status: pending
+assignments:
+  - layer_id: eye_white_L
+    selected_candidate_id: eye_white_L-mock-001
+    alternative_candidate_ids: []
+    target_mask: generated/segmentation_result_masks/eye_white_L.mock-001.soft.png
+    protect_mask: generated/masks/eye_white_L.protect.png
+    edge_extension_mask: generated/masks/eye_white_L.edge-extension.png
+    inpaint_mask: generated/masks/eye_white_L.inpaint.png
+    confidence: 0.96
+    status: needs_review
+    requires_review: true
+    review_reasons: [candidate_competition, human_assignment_approval_required]
+    derivation:
+      target_mask: selected_observed_soft_segmentation_candidate
+      protect_mask: retained_existing; derive separately from source-preserve policy
+      edge_extension_mask: retained_existing; derive separately from source boundary overlap
+      inpaint_mask: retained_existing; derive separately from hidden-region generation policy
+      edge_extension_is_inpaint: false
+    segmentation_backend: mock
+    segmentation_model_id: mock-fixture-v1
+    segmentation_model_revision: '1'
+    segmentation_run_id: 00000000-0000-0000-0000-000000000001
+    segmentation_confidence: 0.96
+summary:
+  assignment_count: 1
+  all_assignments_require_review: true
+  canonical_queue_modified: false

@@ -21,10 +21,18 @@ windows = [
   "pywinauto>=0.6.8",
 ]
 dev = [
+  "jsonschema>=4.23",
   "mypy>=1.14",
   "pytest>=8.3",
   "ruff>=0.9",
+  "types-jsonschema>=4.23",
   "types-PyYAML>=6.0.12",
+]
+segmentation = [
+  "huggingface-hub>=0.27",
+  "numpy>=1.26",
+  "torch>=2.5",
+  "transformers>=4.48",
 ]
 
 [project.scripts]
@@ -45,6 +53,10 @@ asset-quality-evaluator = "tools.asset_quality_evaluator:main"
 motion-stress-tester = "tools.motion_stress_tester:main"
 asset-refinement-planner = "tools.asset_refinement_planner:main"
 psd-asset-builder = "tools.psd_asset_builder:main"
+automatic-segmenter = "tools.automatic_segmenter:main"
+segmentation-candidate-ranker = "tools.segmentation_candidate_ranker:main"
+segmentation-assignment-planner = "tools.segmentation_assignment_planner:main"
+segmentation-preview = "tools.segmentation_preview:main"
 validate-action-plan = "scripts.validate_action_plan:main"
 
 [tool.hatch.build.targets.wheel]
@@ -55,6 +67,7 @@ addopts = "-q -m 'not benchmark'"
 testpaths = ["tests"]
 markers = [
   "benchmark: opt-in wall-clock performance checks for 2048x2048 image processing",
+  "gpu: opt-in tests that load real GPU segmentation models",
 ]
 
 [tool.ruff]
