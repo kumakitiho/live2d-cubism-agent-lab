@@ -38,9 +38,13 @@ DEFAULT_QUALITY_THRESHOLDS: dict[str, int | float] = {
 def _binary_alpha(image: Image.Image, *, alpha_threshold: int = 1) -> Image.Image:
     if not 1 <= alpha_threshold <= 255:
         raise ValueError("alpha_threshold must be from 1 to 255")
-    return image.convert("RGBA").getchannel("A").point(
-        lambda value: 255 if value >= alpha_threshold else 0,
-        mode="L",
+    return (
+        image.convert("RGBA")
+        .getchannel("A")
+        .point(
+            lambda value: 255 if value >= alpha_threshold else 0,
+            mode="L",
+        )
     )
 
 
@@ -381,6 +385,7 @@ def evaluate_part(
         protect_mask=protect,
     )
     attribution_region = _union_masks(target_mask, edge_extension, inpaint)
+    reconstruction_gate_region = ImageChops.subtract(attribution_region, inpaint)
     candidate_inpaint = ImageChops.darker(inpaint, _binary_alpha(part))
     seam_support = ImageChops.subtract(
         _union_masks(target_mask, protect, edge_extension),
@@ -424,7 +429,7 @@ def evaluate_part(
         "visual_reconstruction_difference_score": difference_score(
             source,
             reconstructed_image,
-            attribution_region,
+            reconstruction_gate_region,
         ),
     }
     threshold_by_metric = {
@@ -436,9 +441,7 @@ def evaluate_part(
         "inpaint_outside_difference_score": "max_inpaint_outside_difference_score",
         "edge_continuity_score": "max_edge_continuity_score",
         "boundary_color_difference_score": "max_boundary_color_difference_score",
-        "visual_reconstruction_difference_score": (
-            "max_visual_reconstruction_difference_score"
-        ),
+        "visual_reconstruction_difference_score": ("max_visual_reconstruction_difference_score"),
     }
     failed_checks = [
         metric
@@ -549,16 +552,10 @@ def main(argv: list[str] | None = None) -> int:
                 "max_transparent_hole_px": args.max_transparent_hole_px,
                 "max_overlap_deficit_px": args.max_overlap_deficit_px,
                 "max_preserve_region_difference_score": 0.0,
-                "max_edge_extension_difference_score": (
-                    args.max_edge_extension_difference_score
-                ),
-                "max_inpaint_outside_difference_score": (
-                    args.max_inpaint_outside_difference_score
-                ),
+                "max_edge_extension_difference_score": (args.max_edge_extension_difference_score),
+                "max_inpaint_outside_difference_score": (args.max_inpaint_outside_difference_score),
                 "max_edge_continuity_score": args.max_edge_continuity_score,
-                "max_boundary_color_difference_score": (
-                    args.max_boundary_color_difference_score
-                ),
+                "max_boundary_color_difference_score": (args.max_boundary_color_difference_score),
                 "max_visual_reconstruction_difference_score": (
                     args.max_visual_reconstruction_difference_score
                 ),
@@ -576,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
             if source.size != reconstructed.size:
                 raise ValueError("source and reconstructed images must use the same canvas")
             foreground_regions: list[Image.Image] = []
+            inpaint_regions: list[Image.Image] = []
             for index, raw_part in enumerate(quality_parts):
                 layer_id = raw_part.get("layer_id")
                 part_value = raw_part.get("output_file")
@@ -624,7 +622,13 @@ def main(argv: list[str] | None = None) -> int:
                 inpaint = load_binary_mask(
                     resolve_inside_base(base_dir, inpaint_value, "inpaint_mask"), source.size
                 )
-                foreground_regions.append(_union_masks(target, edge_extension, inpaint))
+                inpaint_regions.append(inpaint)
+                foreground_regions.append(
+                    ImageChops.subtract(
+                        _union_masks(target, edge_extension, inpaint),
+                        inpaint,
+                    )
+                )
                 evaluation = evaluate_part(
                     part,
                     source,
@@ -646,6 +650,11 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 report_parts.append({"layer_id": layer_id, **evaluation})
             foreground = foreground_reconstruction_mask(foreground_regions, reconstructed)
+            if inpaint_regions:
+                foreground = ImageChops.subtract(
+                    foreground,
+                    _union_masks(*inpaint_regions),
+                )
             difference = premultiplied_difference_image(source, reconstructed, foreground)
             atomic_save_png(difference, difference_path, force=args.force)
             visual_reconstruction_difference_score = difference_score(
@@ -681,9 +690,7 @@ def main(argv: list[str] | None = None) -> int:
                         "failed_checks": [],
                     }
                 )
-        failed_parts = sum(
-            1 for part in report_parts if part.get("quality_status") == "fail"
-        )
+        failed_parts = sum(1 for part in report_parts if part.get("quality_status") == "fail")
         visual_threshold = float(thresholds["max_visual_reconstruction_difference_score"])
         computed_result = (
             "fail"
@@ -710,9 +717,7 @@ def main(argv: list[str] | None = None) -> int:
                 "total_parts": len(report_parts),
                 "failed_parts": failed_parts,
                 "result": computed_result,
-                "visual_reconstruction_difference_score": (
-                    visual_reconstruction_difference_score
-                ),
+                "visual_reconstruction_difference_score": (visual_reconstruction_difference_score),
             },
         }
         issues = validate_asset_quality(report)

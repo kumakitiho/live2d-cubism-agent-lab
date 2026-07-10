@@ -66,7 +66,7 @@ class SegmentationRequest:
                 raise ValueError("point prompt must stay inside the source canvas")
         for field_name, image in (
             ("existing_mask", self.existing_mask),
-            *(('fixture_masks', image) for image in self.fixture_masks),
+            *(("fixture_masks", image) for image in self.fixture_masks),
         ):
             if image is not None and image.size != self.source_image.size:
                 raise ValueError(f"{field_name} canvas mismatch")
@@ -144,3 +144,5 @@ class SegmentationBackend(Protocol):
         *,
         execute: bool = False,
     ) -> SegmentationResult: ...
+
+    def release(self) -> None: ...

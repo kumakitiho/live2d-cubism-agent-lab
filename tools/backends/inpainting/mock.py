@@ -18,6 +18,9 @@ class MockInpaintingBackend:
     def status(self) -> BackendStatus:
         return BackendStatus(self.name, True, "deterministic CPU fixture backend")
 
+    def release(self) -> None:
+        """Mock backend has no retained model resources."""
+
     def generate(
         self,
         image: Image.Image,

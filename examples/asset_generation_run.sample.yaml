@@ -1,0 +1,45 @@
+schema_version: 1
+project: sample-one-image-model
+run_id: run-001
+outcome: waiting_for_review
+canonical_queue: generated/asset_generation_queue.yaml
+canonical_queue_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+canonical_queue_content_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+source_image_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+configuration_sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+queue_candidate: null
+stages:
+  segmentation:
+    backend: mock
+    status: completed
+    request:
+      run_id: run-001
+      canonical_queue: generated/asset_generation_queue.yaml
+    result: generated/runs/run-001/segmentation/result.yaml
+    ranked: generated/runs/run-001/segmentation/ranked.yaml
+  assignment:
+    status: waiting_for_review
+    plan: generated/runs/run-001/assignments/assignment.yaml
+  extraction:
+    status: blocked
+    request: null
+    result: null
+  inpainting:
+    backend: mock
+    status: blocked
+    requests: []
+    results: []
+    selections: []
+  quality:
+    status: blocked
+    request: null
+    result: null
+  refinement:
+    status: blocked
+    request: null
+    result: null
+resources:
+  max_cpu_workers: 4
+  max_gpu_workers: 1
+  gpu_memory_budget_mb: 0
+  model_exclusive_lock: true

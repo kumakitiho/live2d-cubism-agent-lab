@@ -38,6 +38,10 @@ class DiffusersInpaintingBackend:
             )
         return BackendStatus(self.name, True, "optional dependencies are importable")
 
+    def release(self) -> None:
+        self._pipeline = None
+        self._loaded_key = None
+
     def _pipeline_key(self, config: Mapping[str, Any]) -> tuple[object, ...]:
         return (
             config.get("model_id"),

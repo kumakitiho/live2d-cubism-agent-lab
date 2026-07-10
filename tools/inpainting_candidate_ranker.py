@@ -105,9 +105,12 @@ def rank_candidates(
         raise ValueError("all inpainting candidates failed; no selection was created")
     ranked = sorted(passing, key=candidate_rank_key)
     best = deepcopy(dict(ranked[0]))
-    effective_result_sha256 = result_sha256 or hashlib.sha256(
-        json.dumps(dict(result), ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()
+    effective_result_sha256 = (
+        result_sha256
+        or hashlib.sha256(
+            json.dumps(dict(result), ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+    )
     ranking = [
         {
             "rank": index,

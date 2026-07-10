@@ -85,9 +85,7 @@ def test_left_candidate_ranks_above_wrong_side_candidate(tmp_path: Path) -> None
 
 def test_low_confidence_candidate_needs_review(tmp_path: Path) -> None:
     result = _result(tmp_path)
-    result["candidates"] = [
-        _candidate("low", "left.png", [1, 2, 4, 5], 9, confidence=0.2)
-    ]
+    result["candidates"] = [_candidate("low", "left.png", [1, 2, 4, 5], 9, confidence=0.2)]
 
     ranked = rank_candidates(result, base_dir=tmp_path)
 
@@ -140,8 +138,7 @@ def test_candidate_conflict_is_marked_for_different_layers(tmp_path: Path) -> No
     ranked = rank_candidates(result, base_dir=tmp_path)
 
     assert all(
-        "candidate_conflict" in candidate["rejection_reasons"]
-        for candidate in ranked["candidates"]
+        "candidate_conflict" in candidate["rejection_reasons"] for candidate in ranked["candidates"]
     )
 
 

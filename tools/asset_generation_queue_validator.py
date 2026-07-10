@@ -393,8 +393,10 @@ def validate_asset_generation_queue(
                     issues.append(
                         ArtifactIssue(f"{base}.{key}", "must be a non-empty list of strings")
                     )
-            if schema_version == 3 and isinstance(job.get("targets"), list) and isinstance(
-                job.get("operations"), list
+            if (
+                schema_version == 3
+                and isinstance(job.get("targets"), list)
+                and isinstance(job.get("operations"), list)
             ):
                 operations = set(job["operations"])
                 for target in job["targets"]:

@@ -371,9 +371,7 @@ class WindowsCubismBackend:
         raise UIAutomationError("control does not support select/invoke")
 
     def _choose_model_open_mode(self, mode: str) -> None:
-        dialog = self._active_dialogs.get("model_settings") or self._find_dialog(
-            "model_settings"
-        )
+        dialog = self._active_dialogs.get("model_settings") or self._find_dialog("model_settings")
         patterns = MODEL_MODE_PATTERNS.get(mode)
         if patterns is None:
             raise UIAutomationError(f"unsupported model open mode: {mode}")

@@ -56,10 +56,7 @@ def select_generation_method(current: str, failed_checks: list[str]) -> str:
         return "transparency_fill"
     if "white_halo_px" in failed_checks and current == "extract":
         return "extract_and_edge_repair"
-    if (
-        "edge_extension_difference_score" in failed_checks
-        or "overlap_deficit_px" in failed_checks
-    ):
+    if "edge_extension_difference_score" in failed_checks or "overlap_deficit_px" in failed_checks:
         return "extract_and_edge_repair"
     if INPAINT_RERANK_CHECKS.intersection(failed_checks):
         return current if current in {"inpaint", "redraw"} else "inpaint"
@@ -92,10 +89,7 @@ def requested_refinement_action(
         )
     if "transparent_hole_px" in failed_checks:
         return "fill_required_target_transparency"
-    if (
-        "edge_extension_difference_score" in failed_checks
-        or "overlap_deficit_px" in failed_checks
-    ):
+    if "edge_extension_difference_score" in failed_checks or "overlap_deficit_px" in failed_checks:
         return "rerun_extract_and_edge_repair"
     if "white_halo_px" in failed_checks:
         return (
@@ -160,8 +154,7 @@ def build_refinement_plan(
         missing = sorted(expected_quality_ids - actual_quality_ids)
         extra = sorted(actual_quality_ids - expected_quality_ids)
         raise ValueError(
-            "asset quality must cover every import asset exactly; "
-            f"missing={missing}, extra={extra}"
+            f"asset quality must cover every import asset exactly; missing={missing}, extra={extra}"
         )
     unknown = failed - set(asset_by_id)
     if unknown:
@@ -218,9 +211,7 @@ def apply_refinement_plan(
     queue_jobs = result.get("jobs")
     if not isinstance(jobs, list) or not isinstance(assets, list):
         raise ValueError("refinement jobs and queue assets are required")
-    refinements = {
-        str(job.get("layer_id")): job for job in jobs if isinstance(job, Mapping)
-    }
+    refinements = {str(job.get("layer_id")): job for job in jobs if isinstance(job, Mapping)}
     for asset in assets:
         if not isinstance(asset, dict):
             continue
@@ -256,8 +247,7 @@ def apply_refinement_plan(
                 [
                     operation
                     for operation in operations
-                    if isinstance(operation, str)
-                    and operation not in generation_operation_names
+                    if isinstance(operation, str) and operation not in generation_operation_names
                 ]
                 if isinstance(operations, list)
                 else []

@@ -272,9 +272,7 @@ def apply_assignment_plan(
     if not isinstance(result_assets, list):
         raise ValueError("queue assets must be a list")
     asset_by_id = {
-        str(asset.get("layer_id")): asset
-        for asset in result_assets
-        if isinstance(asset, dict)
+        str(asset.get("layer_id")): asset for asset in result_assets if isinstance(asset, dict)
     }
     seen_layers: set[str] = set()
     seen_candidates: set[str] = set()
@@ -429,9 +427,7 @@ def render_queue_with_selected_updates(
     if not isinstance(updated_assets, list):
         raise ValueError("updated queue assets must be a list")
     updated_by_id = {
-        str(asset.get("layer_id")): asset
-        for asset in updated_assets
-        if isinstance(asset, Mapping)
+        str(asset.get("layer_id")): asset for asset in updated_assets if isinstance(asset, Mapping)
     }
     replacements: list[tuple[int, int, str]] = []
     for layer_id in selected_layer_ids:

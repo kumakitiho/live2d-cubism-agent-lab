@@ -70,12 +70,12 @@ def test_all_new_tools_support_dry_run() -> None:
     assert (
         refinement_main(
             [
-                    queue,
-                    "examples/asset_quality.sample.yaml",
-                    "--output",
-                    "generated/test-refinement-plan.yaml",
-                    "--refined-queue-output",
-                    "generated/test-refined-queue.yaml",
+                queue,
+                "examples/asset_quality.sample.yaml",
+                "--output",
+                "generated/test-refinement-plan.yaml",
+                "--refined-queue-output",
+                "generated/test-refined-queue.yaml",
             ]
         )
         == 0
@@ -108,9 +108,9 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
             {
                 "layer_id": "fixture_part",
                 "target_mask": "target.png",
-                    "protect_mask": "protect.png",
-                    "edge_extension_mask": "edge-extension.png",
-                    "inpaint_mask": "inpaint.png",
+                "protect_mask": "protect.png",
+                "edge_extension_mask": "edge-extension.png",
+                "inpaint_mask": "inpaint.png",
                 "source_file": "parts/fixture.png",
                 "generation_method": "extract",
                 "dependencies": [],
@@ -123,9 +123,9 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
             {
                 "layer_id": "guide_only",
                 "target_mask": "target.png",
-                    "protect_mask": "protect.png",
-                    "edge_extension_mask": "edge-extension.png",
-                    "inpaint_mask": "inpaint.png",
+                "protect_mask": "protect.png",
+                "edge_extension_mask": "edge-extension.png",
+                "inpaint_mask": "inpaint.png",
                 "source_file": "parts/missing-guide.png",
                 "generation_method": "extract",
                 "dependencies": [],

@@ -143,9 +143,7 @@ def referenced_artifact_paths(
     if isinstance(feedback_inputs, list):
         for index, value in enumerate(feedback_inputs):
             if isinstance(value, str) and value.strip():
-                paths.add(
-                    resolve_inside_base(base_dir, value, f"feedback_inputs[{index}]")
-                )
+                paths.add(resolve_inside_base(base_dir, value, f"feedback_inputs[{index}]"))
 
     for collection_name in ("parts", "assets"):
         collection = data.get(collection_name)
@@ -500,9 +498,7 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
         for key in count_threshold_keys:
             value = thresholds.get(key)
             if not is_non_negative_int(value):
-                issues.append(
-                    ArtifactIssue(f"thresholds.{key}", "must be a non-negative integer")
-                )
+                issues.append(ArtifactIssue(f"thresholds.{key}", "must be a non-negative integer"))
                 threshold_values[key] = 0.0
             else:
                 assert isinstance(value, int)
@@ -546,9 +542,7 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
         "inpaint_outside_difference_score": "max_inpaint_outside_difference_score",
         "edge_continuity_score": "max_edge_continuity_score",
         "boundary_color_difference_score": "max_boundary_color_difference_score",
-        "visual_reconstruction_difference_score": (
-            "max_visual_reconstruction_difference_score"
-        ),
+        "visual_reconstruction_difference_score": ("max_visual_reconstruction_difference_score"),
     }
     informational_metrics = {"inpaint_region_source_difference_score"}
     seen: set[str] = set()
@@ -621,8 +615,10 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
                 )
             for key in expected_metrics:
                 value = metrics.get(key)
-                valid_score = key.endswith("_score") and isinstance(value, (int, float)) and (
-                    not isinstance(value, bool) and 0 <= float(value) <= 1
+                valid_score = (
+                    key.endswith("_score")
+                    and isinstance(value, (int, float))
+                    and (not isinstance(value, bool) and 0 <= float(value) <= 1)
                 )
                 valid_count = not key.endswith("_score") and is_non_negative_int(value)
                 if not valid_score and not valid_count:
@@ -729,7 +725,12 @@ def write_yaml(path: Path, data: Mapping[str, Any], *, force: bool = False) -> N
     if path.exists() and not force:
         raise FileExistsError(f"refusing to overwrite without --force: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(dict(data), allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            yaml.safe_dump(dict(data), allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)

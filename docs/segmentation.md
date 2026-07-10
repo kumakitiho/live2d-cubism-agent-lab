@@ -15,12 +15,12 @@
 - soft、binary、overlay previewの同一canvas出力
 - confidence、左右、expected region、source alpha、競合、対称性、taxonomyを用いるranking
 - human review必須のassignment planと、承認済みpartだけのqueue候補適用
+- `asset_generation_orchestrator`からsource抽出・生成inpainting・qualityへ接続するrun単位のhandoff
 
 未実装・対象外:
 
 - model checkpointのdownloadやmodel registryへのnetwork access
-- 生成inpainting、redraw、隠れ領域の自動生成
-- asset generation orchestratorへの統合
+- segmentation CLI単体での生成inpainting、redraw、隠れ領域生成（生成inpaintingはorchestratorが別backendへhandoff）
 - Cubism操作、PSD生成、rigging
 - ranking結果の自動確定
 - `protect_mask`、`edge_extension_mask`、`inpaint_mask`をsegmentation成功だけで生成済みにする処理

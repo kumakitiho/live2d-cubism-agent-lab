@@ -38,6 +38,8 @@ class InpaintingBackend(Protocol):
         config: Mapping[str, Any],
     ) -> Image.Image: ...
 
+    def release(self) -> None: ...
+
 
 def model_size(config: Mapping[str, Any], *, default: int) -> tuple[int, int]:
     value = config.get("model_size", default)

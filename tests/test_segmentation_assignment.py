@@ -191,9 +191,7 @@ jobs:
         selected_layer_ids={"eye_L"},
     )
 
-    unselected_after = rendered[
-        rendered.index("  - layer_id: eye_R") : rendered.index("jobs:")
-    ]
+    unselected_after = rendered[rendered.index("  - layer_id: eye_R") : rendered.index("jobs:")]
     assert unselected_after == unselected_before
     assert yaml.safe_load(rendered) == updated
 

@@ -69,9 +69,7 @@ def test_plan_uses_three_masks_and_draw_order(source_image: Path) -> None:
     assert all(isinstance(part["draw_order"], int) for part in parts)
     assert all(isinstance(part["overlap_margin_px"], int) for part in parts)
     assert all(
-        part["generation_method"] != "extract"
-        for part in parts
-        if part["overlap_margin_px"] > 0
+        part["generation_method"] != "extract" for part in parts if part["overlap_margin_px"] > 0
     )
 
 

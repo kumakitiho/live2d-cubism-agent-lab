@@ -386,9 +386,7 @@ def rank_candidates(
     result["summary"] = {
         "candidate_count": len(ranked),
         "layer_count": len(grouped),
-        "needs_review_count": sum(
-            1 for candidate in ranked if candidate["requires_review"]
-        ),
+        "needs_review_count": sum(1 for candidate in ranked if candidate["requires_review"]),
         "automatic_assignment": False,
     }
     return result

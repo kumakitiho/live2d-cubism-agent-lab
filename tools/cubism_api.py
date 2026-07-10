@@ -486,6 +486,7 @@ class CubismAPISession:
             "response": response,
         }
 
+
 def run_named_api_command(
     command: str,
     args: Mapping[str, Any] | None = None,
@@ -557,9 +558,7 @@ def _command_from_cli(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     if args.command == "set-parameter-values":
         values["parameters"] = parse_parameter_assignments(args.param)
     if args.command == "send-log":
-        values.update(
-            {"message": args.message, "type": args.type, "display": not args.no_display}
-        )
+        values.update({"message": args.message, "type": args.type, "display": not args.no_display})
     return command, values
 
 

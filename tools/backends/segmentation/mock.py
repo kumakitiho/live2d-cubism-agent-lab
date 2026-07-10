@@ -108,6 +108,9 @@ class MockSegmentationBackend:
     def check_availability(self) -> BackendAvailability:
         return BackendAvailability(True)
 
+    def release(self) -> None:
+        """Mock backend has no retained model resources."""
+
     def segment(
         self,
         request: SegmentationRequest,
@@ -138,9 +141,7 @@ class MockSegmentationBackend:
             bbox = mask.getbbox()
             if bbox is None:
                 continue
-            candidate_digest = hashlib.sha256(
-                f"{digest}:{index}".encode("ascii")
-            ).hexdigest()[:12]
+            candidate_digest = hashlib.sha256(f"{digest}:{index}".encode("ascii")).hexdigest()[:12]
             candidates.append(
                 SegmentationCandidate(
                     candidate_id=f"{request.layer_id}-{candidate_digest}",

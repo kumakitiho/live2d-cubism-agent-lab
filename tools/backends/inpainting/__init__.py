@@ -1,31 +1,17 @@
 from __future__ import annotations
 
+from typing import cast
+
+from tools.backend_registry import registry
 from tools.backends.inpainting.base import BackendStatus, InpaintingBackend
-from tools.backends.inpainting.diffusers_backend import DiffusersInpaintingBackend
-from tools.backends.inpainting.flux_fill import FluxFillInpaintingBackend
-from tools.backends.inpainting.mock import MockInpaintingBackend
 
 
 def create_backend(name: str) -> InpaintingBackend:
-    normalized = name.strip().lower().replace("-", "_")
-    backends: dict[str, type[InpaintingBackend]] = {
-        "mock": MockInpaintingBackend,
-        "diffusers": DiffusersInpaintingBackend,
-        "flux_fill": FluxFillInpaintingBackend,
-        "flux": FluxFillInpaintingBackend,
-    }
-    backend_type = backends.get(normalized)
-    if backend_type is None:
-        raise ValueError(f"unknown inpainting backend: {name}")
-    return backend_type()
+    return cast(InpaintingBackend, registry.get_inpainting(name))
 
 
 def backend_statuses() -> list[BackendStatus]:
-    return [
-        MockInpaintingBackend().status(),
-        DiffusersInpaintingBackend().status(),
-        FluxFillInpaintingBackend().status(),
-    ]
+    return [registry.get_inpainting(name).status() for name in registry.inpainting_names]
 
 
 __all__ = [

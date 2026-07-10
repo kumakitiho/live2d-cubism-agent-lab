@@ -135,14 +135,20 @@ def test_mock_end_to_end_preserves_protect_outside_canvas_origin_and_provenance(
         assert metadata["preview_sha256"] == file_sha256(preview_path)
         candidate = Image.open(candidate_path).convert("RGBA")
         outputs.append(candidate.tobytes())
-        assert ImageChops.difference(
-            Image.composite(baseline, Image.new("RGBA", baseline.size), protect),
-            Image.composite(candidate, Image.new("RGBA", baseline.size), protect),
-        ).getbbox() is None
-        assert ImageChops.difference(
-            Image.composite(baseline, Image.new("RGBA", baseline.size), outside),
-            Image.composite(candidate, Image.new("RGBA", baseline.size), outside),
-        ).getbbox() is None
+        assert (
+            ImageChops.difference(
+                Image.composite(baseline, Image.new("RGBA", baseline.size), protect),
+                Image.composite(candidate, Image.new("RGBA", baseline.size), protect),
+            ).getbbox()
+            is None
+        )
+        assert (
+            ImageChops.difference(
+                Image.composite(baseline, Image.new("RGBA", baseline.size), outside),
+                Image.composite(candidate, Image.new("RGBA", baseline.size), outside),
+            ).getbbox()
+            is None
+        )
         assert metadata["crop_box"] == [2, 0, 9, 8]
         assert metadata["resize_from"] == [7, 8]
         assert metadata["resize_to"] == [16, 12]
@@ -295,9 +301,7 @@ def test_output_collision_prevents_partial_publication(tmp_path: Path) -> None:
     assert not list((tmp_path / "generated").rglob("*.png"))
 
 
-def test_failed_later_candidate_publishes_no_partial_run(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
+def test_failed_later_candidate_publishes_no_partial_run(tmp_path: Path, monkeypatch: Any) -> None:
     _fixture(tmp_path)
     original_generate = MockInpaintingBackend.generate
     calls = 0
@@ -459,9 +463,9 @@ def test_ranking_duplicate_ids_all_fail_and_deterministic_selection(tmp_path: Pa
     result = _run_fixture(tmp_path)
     first = rank_candidates(result)
     second = rank_candidates(result)
-    assert first["selected_candidate"]["candidate_id"] == second["selected_candidate"][
-        "candidate_id"
-    ]
+    assert (
+        first["selected_candidate"]["candidate_id"] == second["selected_candidate"]["candidate_id"]
+    )
     assert first["review_required"] is True
     assert first["review"]["status"] == "pending"
     duplicate = deepcopy(result)
@@ -568,9 +572,7 @@ def test_rank_cli_and_approved_apply_only_change_selected_part(tmp_path: Path) -
     else:
         raise AssertionError("a tampered failed candidate must not be applied")
     strict_tampered = deepcopy(selection)
-    strict_tampered["selected_candidate"]["quality_metrics"][
-        "protect_difference_px"
-    ] = 1
+    strict_tampered["selected_candidate"]["quality_metrics"]["protect_difference_px"] = 1
     try:
         apply_selection_to_queue(queue, strict_tampered)
     except ValueError as exc:

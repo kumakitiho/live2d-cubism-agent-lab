@@ -90,9 +90,7 @@ def test_sam2_broken_optional_import_returns_unavailable(
         "import_module",
         lambda _name: (_ for _ in ()).throw(KeyError("broken optional install")),
     )
-    backend = Sam2SegmentationBackend(
-        Sam2Config(model_id="facebook/sam2.1-hiera-small")
-    )
+    backend = Sam2SegmentationBackend(Sam2Config(model_id="facebook/sam2.1-hiera-small"))
 
     result = backend.segment(_request(), execute=True)
 

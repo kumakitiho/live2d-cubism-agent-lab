@@ -142,9 +142,7 @@ def validate_asset_manifest(
         errors.append(ManifestIssue("project", "must be a non-empty string"))
     derived_from = data.get("derived_from")
     queue_schema_version = (
-        derived_from.get("queue_schema_version")
-        if isinstance(derived_from, Mapping)
-        else None
+        derived_from.get("queue_schema_version") if isinstance(derived_from, Mapping) else None
     )
 
     source_image = data.get("source_image")
@@ -306,10 +304,7 @@ def validate_asset_manifest(
                     "inpaint_mask",
                 ):
                     mask_value = part.get(mask_field)
-                    if (
-                        not isinstance(mask_value, str)
-                        or Path(mask_value).suffix.lower() != ".png"
-                    ):
+                    if not isinstance(mask_value, str) or Path(mask_value).suffix.lower() != ".png":
                         errors.append(
                             ManifestIssue(f"{base}.{mask_field}", "must reference a .png mask")
                         )

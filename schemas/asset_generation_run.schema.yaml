@@ -1,0 +1,84 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Live2D AI asset generation run state
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - project
+  - run_id
+  - outcome
+  - canonical_queue
+  - canonical_queue_sha256
+  - canonical_queue_content_sha256
+  - source_image_sha256
+  - configuration_sha256
+  - queue_candidate
+  - stages
+  - resources
+properties:
+  schema_version: {const: 1}
+  project: {type: string, minLength: 1}
+  run_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'}
+  outcome:
+    enum: [running, waiting_for_review, completed, refinement_required, failed]
+  canonical_queue: {$ref: '#/$defs/relative_path'}
+  canonical_queue_sha256: {$ref: '#/$defs/sha256'}
+  canonical_queue_content_sha256: {$ref: '#/$defs/sha256'}
+  source_image_sha256: {$ref: '#/$defs/sha256'}
+  configuration_sha256: {$ref: '#/$defs/sha256'}
+  queue_candidate:
+    oneOf:
+      - {$ref: '#/$defs/relative_path'}
+      - {type: 'null'}
+  stages:
+    type: object
+    additionalProperties: false
+    required: [segmentation, assignment, extraction, inpainting, quality, refinement]
+    properties:
+      segmentation: {$ref: '#/$defs/stage'}
+      assignment: {$ref: '#/$defs/stage'}
+      extraction: {$ref: '#/$defs/stage'}
+      inpainting: {$ref: '#/$defs/stage'}
+      quality: {$ref: '#/$defs/stage'}
+      refinement: {$ref: '#/$defs/stage'}
+  resources:
+    type: object
+    additionalProperties: false
+    required:
+      - max_cpu_workers
+      - max_gpu_workers
+      - gpu_memory_budget_mb
+      - model_exclusive_lock
+    properties:
+      max_cpu_workers: {type: integer, minimum: 1}
+      max_gpu_workers: {type: integer, minimum: 1}
+      gpu_memory_budget_mb: {type: integer, minimum: 0}
+      model_exclusive_lock: {type: boolean}
+$defs:
+  sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  relative_path:
+    type: string
+    minLength: 1
+    not: {pattern: '^(?:[A-Za-z]:[\\/]|/|\\\\)'}
+  stage:
+    type: object
+    required: [status]
+    properties:
+      status:
+        enum: [planned, running, completed, waiting_for_review, blocked, failed, skipped]
+      backend: {type: string}
+      request: {}
+      requests: {type: array}
+      result: {}
+      results: {type: array}
+      plan: {}
+      ranked: {$ref: '#/$defs/relative_path'}
+      selections: {type: array}
+      queue_candidate: {$ref: '#/$defs/relative_path'}
+      failed_parts: {type: integer, minimum: 0}
+      artifact_sha256:
+        type: object
+        minProperties: 1
+        additionalProperties: {$ref: '#/$defs/sha256'}
+      error: {type: string, minLength: 1}
+    additionalProperties: false

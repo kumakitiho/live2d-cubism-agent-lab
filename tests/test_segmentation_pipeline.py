@@ -88,9 +88,7 @@ def test_mock_end_to_end_preserves_soft_mask_and_canvas(tmp_path: Path) -> None:
     assert exit_code == 0
     result: dict[str, Any] = yaml.safe_load((tmp_path / "result.yaml").read_text("utf-8"))
     assert result["status"] == "completed"
-    assert result["asset_generation_queue_sha256"] == hashlib.sha256(
-        queue.read_bytes()
-    ).hexdigest()
+    assert result["asset_generation_queue_sha256"] == hashlib.sha256(queue.read_bytes()).hexdigest()
     assert result["source_image_sha256"] == source_digest
     assert result["canvas"] == {"width": 8, "height": 6, "origin": [0, 0]}
     assert result["summary"]["automatic_assignment"] is False
@@ -398,9 +396,7 @@ def test_mock_full_workflow_requires_review_before_new_queue_candidate(
         == 0
     )
 
-    updated: dict[str, Any] = yaml.safe_load(
-        (tmp_path / "queue.segmented.yaml").read_text("utf-8")
-    )
+    updated: dict[str, Any] = yaml.safe_load((tmp_path / "queue.segmented.yaml").read_text("utf-8"))
     assert updated["assets"][0]["target_mask"].endswith(".soft.png")
     assert updated["assets"][0]["segmentation_run_id"]
     assert queue.read_bytes() == original_queue_bytes

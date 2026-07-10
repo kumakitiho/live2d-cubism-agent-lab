@@ -24,15 +24,9 @@ def test_mock_backend_is_deterministic_and_changes_only_mask() -> None:
     mask = Image.new("L", image.size, 0)
     mask.putpixel((2, 1), 255)
     backend = MockInpaintingBackend()
-    first = backend.generate(
-        image, mask, prompt="part", negative_prompt="", seed=41, config={}
-    )
-    second = backend.generate(
-        image, mask, prompt="part", negative_prompt="", seed=41, config={}
-    )
-    third = backend.generate(
-        image, mask, prompt="part", negative_prompt="", seed=42, config={}
-    )
+    first = backend.generate(image, mask, prompt="part", negative_prompt="", seed=41, config={})
+    second = backend.generate(image, mask, prompt="part", negative_prompt="", seed=41, config={})
+    third = backend.generate(image, mask, prompt="part", negative_prompt="", seed=42, config={})
     assert first.tobytes() == second.tobytes()
     assert first.getpixel((2, 1)) != third.getpixel((2, 1))
     assert first.getpixel((0, 0)) == image.getpixel((0, 0))

@@ -213,27 +213,21 @@ def _validate_command_arguments(
         if resolved.suffix.lower() != ".png":
             issues.append(ValidationIssue(f"{base}.args.{key}", "must end in .png"))
         if not _is_within(resolved, output_root):
-            issues.append(
-                ValidationIssue(f"{base}.args.{key}", "must stay within outputs/")
-            )
+            issues.append(ValidationIssue(f"{base}.args.{key}", "must stay within outputs/"))
 
     for key in WORKSPACE_INPUT_PATH_ARGUMENTS.get(command, set()):
         if key not in args:
             continue
         resolved = _resolve_plan_path(args[key], workspace_root)
         if resolved is not None and not _is_within(resolved, workspace_root):
-            issues.append(
-                ValidationIssue(f"{base}.args.{key}", "must stay within the workspace")
-            )
+            issues.append(ValidationIssue(f"{base}.args.{key}", "must stay within the workspace"))
 
     if (
         command == "cubism_ui.import_psd"
         and "open_mode" in args
         and args["open_mode"] not in {"create_new_model", "create_new_model_legacy_blend"}
     ):
-        issues.append(
-            ValidationIssue(f"{base}.args.open_mode", "is not a supported open mode")
-        )
+        issues.append(ValidationIssue(f"{base}.args.open_mode", "is not a supported open mode"))
     if (
         command == "cubism_ui.apply_auto_mesh"
         and "preset" in args
@@ -251,9 +245,7 @@ def _validate_command_arguments(
         and isinstance(args.get("message"), str)
         and len(args["message"]) > 5000
     ):
-        issues.append(
-            ValidationIssue(f"{base}.args.message", "must not exceed 5000 characters")
-        )
+        issues.append(ValidationIssue(f"{base}.args.message", "must not exceed 5000 characters"))
     if command == "cubism_api.get_parameter_values" and isinstance(args.get("ids"), list):
         for index, parameter_id in enumerate(args["ids"]):
             if not isinstance(parameter_id, str) or not parameter_id:
@@ -263,9 +255,7 @@ def _validate_command_arguments(
                         "must be a non-empty string",
                     )
                 )
-    if command == "cubism_api.set_parameter_values" and isinstance(
-        args.get("parameters"), list
-    ):
+    if command == "cubism_api.set_parameter_values" and isinstance(args.get("parameters"), list):
         for index, parameter in enumerate(args["parameters"]):
             item_path = f"{base}.args.parameters[{index}]"
             if not isinstance(parameter, Mapping):

@@ -72,9 +72,7 @@ def _resolve_model_source(
         try:
             build_module = importlib.import_module("sam2.build_sam")
             hub = importlib.import_module("huggingface_hub")
-            config_name, checkpoint_name = build_module.HF_MODEL_ID_TO_FILENAMES[
-                config.model_id
-            ]
+            config_name, checkpoint_name = build_module.HF_MODEL_ID_TO_FILENAMES[config.model_id]
             cached_checkpoint = hub.hf_hub_download(
                 repo_id=config.model_id,
                 filename=checkpoint_name,
@@ -278,6 +276,7 @@ class Sam2SegmentationBackend:
     ) -> None:
         self.config = config
         self._runtime_factory = runtime_factory
+        self._runtime: Sam2Runtime | None = None
 
     def check_availability(self) -> BackendAvailability:
         model_source, source_reason = _resolve_model_source(self.config)
@@ -328,12 +327,13 @@ class Sam2SegmentationBackend:
                 message=availability.reason,
             )
         try:
-            runtime = (
-                self._runtime_factory(self.config)
-                if self._runtime_factory is not None
-                else _LocalSam2Runtime(self.config)
-            )
-            candidates = tuple(runtime.segment(request))
+            if self._runtime is None:
+                self._runtime = (
+                    self._runtime_factory(self.config)
+                    if self._runtime_factory is not None
+                    else _LocalSam2Runtime(self.config)
+                )
+            candidates = tuple(self._runtime.segment(request))
         except (
             AttributeError,
             ImportError,
@@ -356,3 +356,10 @@ class Sam2SegmentationBackend:
             candidates=candidates,
             provenance=provenance,
         )
+
+    def release(self) -> None:
+        runtime = self._runtime
+        self._runtime = None
+        release = getattr(runtime, "release", None)
+        if callable(release):
+            release()

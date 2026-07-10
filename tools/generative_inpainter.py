@@ -29,8 +29,13 @@ from tools.asset_quality_evaluator import (
     evaluate_part,
     premultiplied_difference_image,
 )
+from tools.backend_registry import release_backend
 from tools.backends.inpainting import create_backend
-from tools.backends.inpainting.base import BackendUnavailableError, model_size
+from tools.backends.inpainting.base import (
+    BackendUnavailableError,
+    InpaintingBackend,
+    model_size,
+)
 from tools.inpainting_preview import build_inpainting_preview
 
 REQUEST_FIELDS = (
@@ -128,8 +133,13 @@ def validate_inpainting_request(data: Mapping[str, Any]) -> list[str]:
         mode = seed_policy.get("mode")
         if mode == "explicit_list":
             seeds = seed_policy.get("seeds")
-            if not isinstance(seeds, list) or not seeds or not all(
-                isinstance(seed, int) and not isinstance(seed, bool) and seed >= 0 for seed in seeds
+            if (
+                not isinstance(seeds, list)
+                or not seeds
+                or not all(
+                    isinstance(seed, int) and not isinstance(seed, bool) and seed >= 0
+                    for seed in seeds
+                )
             ):
                 errors.append("seed_policy.seeds must be a non-empty list of non-negative integers")
             elif isinstance(count, int) and len(seeds) < count:
@@ -298,18 +308,12 @@ def evaluate_inpainting_candidate(
         thresholds=quality_thresholds,
     )
     metrics = dict(evaluation["metrics"])
-    binary_inpaint = inpaint_mask.convert("L").point(
-        lambda value: 255 if value else 0, mode="L"
-    )
+    binary_inpaint = inpaint_mask.convert("L").point(lambda value: 255 if value else 0, mode="L")
     outside = ImageChops.invert(binary_inpaint)
     strict_outside_score = difference_score(baseline, candidate, outside)
     metrics["inpaint_outside_difference_score"] = strict_outside_score
-    metrics["protect_difference_px"] = _difference_pixel_count(
-        baseline, candidate, protect_mask
-    )
-    metrics["inpaint_outside_difference_px"] = _difference_pixel_count(
-        baseline, candidate, outside
-    )
+    metrics["protect_difference_px"] = _difference_pixel_count(baseline, candidate, protect_mask)
+    metrics["inpaint_outside_difference_px"] = _difference_pixel_count(baseline, candidate, outside)
     metrics["edge_extension_difference_score"] = difference_score(
         baseline, candidate, edge_extension_mask
     )
@@ -479,9 +483,7 @@ def validate_inpainting_result(data: Mapping[str, Any]) -> list[str]:
                 not isinstance(value, list)
                 or len(value) != length
                 or not all(
-                    isinstance(item, int)
-                    and not isinstance(item, bool)
-                    and item >= minimum
+                    isinstance(item, int) and not isinstance(item, bool) and item >= minimum
                     for item in value
                 )
             ):
@@ -503,9 +505,7 @@ def validate_inpainting_result(data: Mapping[str, Any]) -> list[str]:
                     )
             for metric in ("canvas_match", "origin_match", "alpha_valid"):
                 if not isinstance(metrics.get(metric), bool):
-                    errors.append(
-                        f"candidates[{index}].quality_metrics.{metric} must be boolean"
-                    )
+                    errors.append(f"candidates[{index}].quality_metrics.{metric} must be boolean")
         quality_status = candidate.get("quality_status")
         if quality_status not in {"pass", "fail"}:
             errors.append(f"candidates[{index}].quality_status must be pass or fail")
@@ -519,9 +519,7 @@ def validate_inpainting_result(data: Mapping[str, Any]) -> list[str]:
         elif len(rejection_reasons) != len(set(rejection_reasons)):
             errors.append(f"candidates[{index}].rejection_reasons must be unique")
         elif (quality_status == "pass") != (rejection_reasons == []):
-            errors.append(
-                f"candidates[{index}].quality_status must agree with rejection_reasons"
-            )
+            errors.append(f"candidates[{index}].quality_status must agree with rejection_reasons")
     return errors
 
 
@@ -548,9 +546,7 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _publish_staged_files(
-    publications: list[tuple[Path, Path]], stage_root: Path
-) -> None:
+def _publish_staged_files(publications: list[tuple[Path, Path]], stage_root: Path) -> None:
     backup_dir = stage_root / "backups"
     backup_dir.mkdir()
     backups: dict[Path, Path] = {}
@@ -624,6 +620,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     base_dir = args.base_dir.resolve()
+    backend: InpaintingBackend | None = None
     try:
         request_path = resolve_inside_base(base_dir, str(args.request), "request")
         output_path = resolve_inside_base(base_dir, str(args.output), "result output")
@@ -650,14 +647,17 @@ def main(argv: list[str] | None = None) -> int:
         plans = _candidate_plan(request, seeds, output_dir)
         input_paths = {
             request_path,
-            *(resolve_inside_base(base_dir, str(request[field]), field) for field in (
-                "source_image",
-                "current_part",
-                "target_mask",
-                "protect_mask",
-                "edge_extension_mask",
-                "inpaint_mask",
-            )),
+            *(
+                resolve_inside_base(base_dir, str(request[field]), field)
+                for field in (
+                    "source_image",
+                    "current_part",
+                    "target_mask",
+                    "protect_mask",
+                    "edge_extension_mask",
+                    "inpaint_mask",
+                )
+            ),
         }
         output_paths = {output_path}
         for plan in plans:
@@ -697,9 +697,7 @@ def main(argv: list[str] | None = None) -> int:
         if not status.available:
             raise BackendUnavailableError(status.detail)
 
-        source_path = resolve_inside_base(
-            base_dir, str(request["source_image"]), "source_image"
-        )
+        source_path = resolve_inside_base(base_dir, str(request["source_image"]), "source_image")
         source = load_rgba(source_path)
         current_part_path = resolve_inside_base(
             base_dir, str(request["current_part"]), "current_part"
@@ -822,9 +820,7 @@ def main(argv: list[str] | None = None) -> int:
                         "rejection_reasons": rejection_reasons,
                     }
                 )
-            passed = sum(
-                candidate["quality_status"] == "pass" for candidate in candidates
-            )
+            passed = sum(candidate["quality_status"] == "pass" for candidate in candidates)
             result: dict[str, Any] = {
                 "schema_version": 1,
                 "project": request["project"],
@@ -876,6 +872,9 @@ def main(argv: list[str] | None = None) -> int:
     ) as exc:
         print(f"ERROR: {exc}")
         return 2
+    finally:
+        if backend is not None:
+            release_backend(backend)
 
     report = {
         "status": "written",

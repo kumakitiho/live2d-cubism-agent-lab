@@ -7,7 +7,7 @@ import re
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from PIL import Image, ImageChops
@@ -19,13 +19,9 @@ from tools.asset_pipeline_common import (
     resolve_inside_base,
 )
 from tools.asset_queue_builder import normalize_queue_ref
-from tools.backends.segmentation import (
-    GroundedSam2SegmentationBackend,
-    GroundingDinoBackend,
-    MockSegmentationBackend,
+from tools.backend_registry import registry, release_backend
+from tools.backends.segmentation.contracts import (
     PointPrompt,
-    Sam2Config,
-    Sam2SegmentationBackend,
     SegmentationBackend,
     SegmentationCandidate,
     SegmentationRequest,
@@ -265,9 +261,7 @@ def build_request(
         layer_id=layer_id,
         source_image=source,
         semantic_prompt=semantic_prompt,
-        point_prompts=_point_prompts(
-            settings.get("point_prompts", asset.get("point_prompts"))
-        ),
+        point_prompts=_point_prompts(settings.get("point_prompts", asset.get("point_prompts"))),
         box_prompt=_box_prompt(settings.get("box_prompt", asset.get("box_prompt"))),
         existing_mask=_load_optional_mask(
             settings.get("existing_mask", asset.get("existing_mask")),
@@ -421,24 +415,23 @@ def _candidate_record(
 
 
 def _make_backend(args: argparse.Namespace) -> SegmentationBackend:
-    if args.backend == "mock":
-        return MockSegmentationBackend()
-    config = Sam2Config(
-        model_id=args.model_id,
-        model_revision=args.model_revision,
-        checkpoint=args.checkpoint.resolve() if args.checkpoint is not None else None,
-        model_config=args.model_config,
-        device=args.device,
+    return cast(
+        SegmentationBackend,
+        registry.get_segmentation(
+            args.backend,
+            {
+                "model_id": args.model_id,
+                "model_revision": args.model_revision,
+                "checkpoint": (args.checkpoint.resolve() if args.checkpoint is not None else None),
+                "model_config": args.model_config,
+                "grounding_model": (
+                    args.grounding_model.resolve() if args.grounding_model is not None else None
+                ),
+                "grounding_model_revision": args.grounding_model_revision,
+                "device": args.device,
+            },
+        ),
     )
-    sam2 = Sam2SegmentationBackend(config)
-    if args.backend == "sam2":
-        return sam2
-    grounding = GroundingDinoBackend(
-        args.grounding_model.resolve() if args.grounding_model is not None else None,
-        model_revision=args.grounding_model_revision,
-        device=args.device,
-    )
-    return GroundedSam2SegmentationBackend(grounding, sam2)
 
 
 def _preflight_outputs(
@@ -503,6 +496,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--grounding-model", type=Path)
     parser.add_argument("--grounding-model-revision")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--run-id")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -512,6 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     base_dir = args.base_dir.resolve()
+    backend: SegmentationBackend | None = None
     try:
         if args.candidate_count is not None and args.candidate_count <= 0:
             raise ValueError("--candidate-count must be positive")
@@ -537,7 +532,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         backend = _make_backend(args)
         queue_ref = normalize_queue_ref(queue_path, base_dir)
-        run_id = str(uuid.uuid4())
+        if args.run_id is not None and not args.run_id.strip():
+            raise ValueError("--run-id must be a non-empty string")
+        run_id = args.run_id or str(uuid.uuid4())
         records: list[dict[str, Any]] = []
         pending_pngs: list[tuple[Path, Image.Image]] = []
         requests: list[dict[str, Any]] = []
@@ -649,6 +646,9 @@ def main(argv: list[str] | None = None) -> int:
     ) as exc:
         print(f"ERROR: {exc}")
         return 2
+    finally:
+        if backend is not None:
+            release_backend(backend)
 
     result_summary = {
         "status": document["status"],

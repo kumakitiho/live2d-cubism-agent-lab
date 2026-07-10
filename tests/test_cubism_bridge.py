@@ -66,11 +66,7 @@ def test_import_verification_checks_document_count_and_current_model() -> None:
         {
             "id": "before",
             "result": {
-                "response": {
-                    "Data": {
-                        "ModelingDocuments": [{"DocumentUID": "doc-1", "Views": []}]
-                    }
-                }
+                "response": {"Data": {"ModelingDocuments": [{"DocumentUID": "doc-1", "Views": []}]}}
             },
         },
         {

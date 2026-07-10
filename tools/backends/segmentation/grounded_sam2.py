@@ -96,9 +96,7 @@ class GroundingDinoBackend:
                 False,
                 f"local Grounding DINO model not found: {self.model_path}",
             )
-        missing = [
-            name for name in ("transformers", "torch") if not _module_available(name)
-        ]
+        missing = [name for name in ("transformers", "torch") if not _module_available(name)]
         if missing:
             return BackendAvailability(
                 False,
@@ -212,6 +210,12 @@ class GroundedSam2SegmentationBackend:
             return sam2
         return BackendAvailability(True)
 
+    def release(self) -> None:
+        release_grounding = getattr(self.grounding_backend, "release", None)
+        if callable(release_grounding):
+            release_grounding()
+        self.sam2_backend.release()
+
     def segment(
         self,
         request: SegmentationRequest,
@@ -281,9 +285,7 @@ class GroundedSam2SegmentationBackend:
                         continue
                     candidates.append(
                         SegmentationCandidate(
-                            candidate_id=(
-                                f"{candidate.candidate_id}-grounding-{detection_index}"
-                            ),
+                            candidate_id=(f"{candidate.candidate_id}-grounding-{detection_index}"),
                             mask=candidate.mask,
                             confidence=combined_confidence,
                             stability_score=candidate.stability_score,

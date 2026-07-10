@@ -40,9 +40,7 @@ class FluxFillInpaintingBackend(DiffusersInpaintingBackend):
             {
                 "height": image.height,
                 "width": image.width,
-                "max_sequence_length": config_positive_int(
-                    config, "max_sequence_length", 512
-                ),
+                "max_sequence_length": config_positive_int(config, "max_sequence_length", 512),
             }
         )
         return arguments
