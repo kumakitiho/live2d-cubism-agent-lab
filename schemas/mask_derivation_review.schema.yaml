@@ -1,0 +1,74 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: mask_derivation_review.schema.yaml
+title: Mask derivation review plan
+type: object
+additionalProperties: false
+required: [schema_version, project, run_id, review_status, derived_from, layers, summary]
+properties:
+  schema_version: {const: 1}
+  project: {type: string, minLength: 1}
+  run_id: {type: string, minLength: 1}
+  review_status: {enum: [pending, approved]}
+  derived_from:
+    type: object
+    additionalProperties: false
+    required:
+      - mask_derivation_result
+      - mask_derivation_result_sha256
+      - canonical_queue
+      - canonical_queue_sha256
+      - canonical_queue_content_sha256
+      - source_image
+      - source_image_sha256
+    properties:
+      mask_derivation_result: {type: string, minLength: 1}
+      mask_derivation_result_sha256: {$ref: '#/$defs/sha256'}
+      canonical_queue: {type: string, minLength: 1}
+      canonical_queue_sha256: {$ref: '#/$defs/sha256'}
+      canonical_queue_content_sha256: {$ref: '#/$defs/sha256'}
+      source_image: {type: string, minLength: 1}
+      source_image_sha256: {$ref: '#/$defs/sha256'}
+  layers:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - layer_id
+        - selected
+        - confidence
+        - status
+        - requires_review
+        - review_reasons
+        - derivation
+      properties:
+        layer_id: {type: string, minLength: 1}
+        selected:
+          type: object
+          additionalProperties: false
+          required:
+            - protect_candidate_id
+            - edge_extension_candidate_id
+            - inpaint_candidate_id
+          properties:
+            protect_candidate_id: {type: [string, 'null']}
+            edge_extension_candidate_id: {type: [string, 'null']}
+            inpaint_candidate_id: {type: [string, 'null']}
+        confidence: {type: number, minimum: 0, maximum: 1}
+        status: {enum: [needs_review, approved, rejected]}
+        requires_review: {type: boolean}
+        review_reasons: {type: array, items: {type: string}}
+        derivation: {type: object}
+  summary:
+    type: object
+    additionalProperties: false
+    required: [layers, selected_candidates, all_layers_require_review, canonical_queue_modified]
+    properties:
+      layers: {type: integer, minimum: 0}
+      selected_candidates: {type: integer, minimum: 0}
+      all_layers_require_review: {type: boolean}
+      canonical_queue_modified: {const: false}
+$defs:
+  sha256:
+    type: string
+    pattern: '^[0-9a-f]{64}$'

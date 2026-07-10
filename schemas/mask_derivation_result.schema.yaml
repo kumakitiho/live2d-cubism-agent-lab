@@ -1,0 +1,230 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: mask_derivation_result.schema.yaml
+title: Mask derivation result
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - project
+  - run_id
+  - canonical_queue
+  - canonical_queue_sha256
+  - canonical_queue_content_sha256
+  - source_image
+  - source_image_sha256
+  - derived_from_segmentation
+  - input_masks
+  - canvas
+  - status
+  - configuration
+  - execution_scope
+  - layers
+  - summary
+properties:
+  schema_version: {const: 1}
+  project: {type: string, minLength: 1}
+  run_id: {type: string, minLength: 1}
+  canonical_queue: {type: string, minLength: 1}
+  canonical_queue_sha256: {$ref: '#/$defs/sha256'}
+  canonical_queue_content_sha256: {$ref: '#/$defs/sha256'}
+  source_image: {type: string, minLength: 1}
+  source_image_sha256: {$ref: '#/$defs/sha256'}
+  derived_from_segmentation:
+    type: object
+    additionalProperties: false
+    required: [present, run_ids]
+    properties:
+      present: {type: boolean}
+      run_ids:
+        type: array
+        items: {type: string, minLength: 1}
+        uniqueItems: true
+  input_masks:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      additionalProperties: false
+      required: [layer_id, path, sha256, purpose]
+      properties:
+        layer_id: {type: string, minLength: 1}
+        path: {type: string, minLength: 1}
+        sha256: {$ref: '#/$defs/sha256'}
+        purpose: {const: target_or_context}
+  canvas:
+    type: object
+    additionalProperties: false
+    required: [width, height, origin]
+    properties:
+      width: {type: integer, minimum: 1}
+      height: {type: integer, minimum: 1}
+      origin:
+        type: array
+        prefixItems: [{const: 0}, {const: 0}]
+        minItems: 2
+        maxItems: 2
+  status: {enum: [completed, partial_failure]}
+  configuration:
+    type: object
+    additionalProperties: false
+    required:
+      - protect_radius_px
+      - edge_radius_px
+      - fine_part_min_area_px
+      - max_candidate_area_ratio
+      - min_island_area_px
+      - binary_threshold
+    properties:
+      protect_radius_px: {type: integer, minimum: 0}
+      edge_radius_px: {type: integer, minimum: 0}
+      fine_part_min_area_px: {type: integer, minimum: 1}
+      max_candidate_area_ratio: {type: number, exclusiveMinimum: 0}
+      min_island_area_px: {type: integer, minimum: 1}
+      binary_threshold: {type: integer, minimum: 1, maximum: 255}
+  execution_scope:
+    type: object
+    additionalProperties: false
+    required: [selected_layers, all_layers]
+    properties:
+      selected_layers:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        items: {type: string, minLength: 1}
+      all_layers: {type: boolean}
+  layers:
+    type: array
+    items: {$ref: '#/$defs/layer'}
+  summary:
+    type: object
+    additionalProperties: false
+    required:
+      - layers_processed
+      - candidates_created
+      - auto_rejected
+      - review_required
+      - unavailable
+      - failed
+      - canonical_queue_modified
+    properties:
+      layers_processed: {type: integer, minimum: 0}
+      candidates_created: {type: integer, minimum: 0}
+      auto_rejected: {type: integer, minimum: 0}
+      review_required: {type: integer, minimum: 0}
+      unavailable: {type: integer, minimum: 0}
+      failed: {type: integer, minimum: 0}
+      canonical_queue_modified: {const: false}
+$defs:
+  sha256:
+    type: string
+    pattern: '^[0-9a-f]{64}$'
+  target:
+    type: object
+    additionalProperties: false
+    required: [path, sha256, soft_grayscale]
+    properties:
+      path: {type: string, minLength: 1}
+      sha256: {$ref: '#/$defs/sha256'}
+      soft_grayscale: {const: true}
+  artifact_candidate:
+    type: object
+    required:
+      - candidate_id
+      - layer_id
+      - mask_type
+      - method
+      - parameters
+      - soft_mask_file
+      - binary_mask_file
+      - preview_file
+      - run_id
+      - artifact_scope
+      - soft_mask_sha256
+      - binary_mask_sha256
+      - preview_sha256
+      - confidence
+      - area_px
+      - coverage_ratio
+      - status
+      - requires_review
+      - warnings
+      - rejection_reasons
+      - review_reasons
+      - derivation_reasons
+      - adjacent_layers
+      - overlap_purpose
+    properties:
+      candidate_id: {type: string, minLength: 1}
+      layer_id: {type: string, minLength: 1}
+      mask_type: {enum: [protect, edge_extension, inpaint]}
+      method: {type: string, minLength: 1}
+      parameters: {type: object}
+      soft_mask_file: {type: string, pattern: '\.soft\.png$'}
+      binary_mask_file: {type: string, pattern: '\.binary\.png$'}
+      preview_file: {type: string, pattern: '\.preview\.png$'}
+      run_id: {type: string, minLength: 1}
+      artifact_scope: {type: string, pattern: '^[0-9a-f]{12}$'}
+      soft_mask_sha256: {$ref: '#/$defs/sha256'}
+      binary_mask_sha256: {$ref: '#/$defs/sha256'}
+      preview_sha256: {$ref: '#/$defs/sha256'}
+      confidence: {type: number, minimum: 0, maximum: 1}
+      soft_coverage: {type: number, minimum: 0}
+      area_px: {type: integer, minimum: 0}
+      coverage_ratio: {type: number, minimum: 0}
+      status: {enum: [candidate, rejected]}
+      requires_review: {const: true}
+      warnings: {type: array, items: {type: string}}
+      rejection_reasons: {type: array, items: {type: string}}
+      review_reasons: {type: array, items: {type: string}}
+      derivation_reasons: {type: array, items: {type: string}}
+      adjacent_layers: {type: array, items: {type: string}}
+      overlap_purpose: {type: array, items: {type: string}}
+  unavailable:
+    type: object
+    additionalProperties: false
+    required: [status, reason, requires_review, derivation_reasons]
+    properties:
+      status: {const: unavailable}
+      reason: {type: string, minLength: 1}
+      requires_review: {const: true}
+      derivation_reasons: {type: array, items: {type: string}}
+  conflict:
+    type: object
+    required: [type, severity, area_px, layers, candidate_types, reason]
+    properties:
+      type: {type: string, minLength: 1}
+      severity: {enum: [review, reject]}
+      area_px: {type: integer, minimum: 0}
+      layers: {type: array, items: {type: string}}
+      candidate_types: {type: array, items: {type: string}}
+      reason: {type: string, minLength: 1}
+  layer:
+    type: object
+    required:
+      - layer_id
+      - role
+      - side
+      - draw_order
+      - target_mask
+      - candidates
+      - conflicts
+      - confidence
+      - requires_review
+      - status
+    properties:
+      layer_id: {type: string, minLength: 1}
+      role: {type: string}
+      side: {type: [string, 'null']}
+      draw_order: {type: [integer, 'null']}
+      target_mask: {$ref: '#/$defs/target'}
+      candidates:
+        type: object
+        properties:
+          protect: {oneOf: [{$ref: '#/$defs/artifact_candidate'}, {$ref: '#/$defs/unavailable'}]}
+          edge_extension: {oneOf: [{$ref: '#/$defs/artifact_candidate'}, {$ref: '#/$defs/unavailable'}]}
+          inpaint: {oneOf: [{$ref: '#/$defs/artifact_candidate'}, {$ref: '#/$defs/unavailable'}]}
+      conflicts: {type: array, items: {$ref: '#/$defs/conflict'}}
+      confidence: {type: number, minimum: 0, maximum: 1}
+      requires_review: {const: true}
+      status: {enum: [candidates_created, failed]}
+      failure_reason: {type: string}

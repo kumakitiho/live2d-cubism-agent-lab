@@ -1,0 +1,51 @@
+schema_version: 1
+project: sample-one-image-model
+run_id: 00000000-0000-0000-0000-000000000010
+canonical_queue: generated/asset_generation_queue.segmented.yaml
+canonical_queue_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+canonical_queue_content_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+source_image: assets/source/character.png
+source_image_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+derived_from_segmentation:
+  present: true
+  run_ids: [00000000-0000-0000-0000-000000000001]
+input_masks:
+  - layer_id: face_base
+    path: generated/masks/face_base.target.png
+    sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    purpose: target_or_context
+canvas: {width: 2048, height: 2048, origin: [0, 0]}
+status: partial_failure
+configuration:
+  protect_radius_px: 2
+  edge_radius_px: 2
+  fine_part_min_area_px: 1
+  max_candidate_area_ratio: 2.0
+  min_island_area_px: 2
+  binary_threshold: 1
+execution_scope:
+  selected_layers: [face_base]
+  all_layers: false
+layers:
+  - layer_id: face_base
+    role: face
+    side: C
+    draw_order: 20
+    target_mask:
+      path: generated/masks/face_base.target.png
+      sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+      soft_grayscale: true
+    candidates: {}
+    conflicts: []
+    confidence: 0.0
+    requires_review: true
+    status: failed
+    failure_reason: sample placeholder; rerun this layer with --retry-failed-from
+summary:
+  layers_processed: 1
+  candidates_created: 0
+  auto_rejected: 0
+  review_required: 1
+  unavailable: 0
+  failed: 1
+  canonical_queue_modified: false

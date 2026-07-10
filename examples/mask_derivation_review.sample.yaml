@@ -1,0 +1,31 @@
+schema_version: 1
+project: sample-one-image-model
+run_id: 00000000-0000-0000-0000-000000000010
+review_status: pending
+derived_from:
+  mask_derivation_result: generated/mask_derivation_result.yaml
+  mask_derivation_result_sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  canonical_queue: generated/asset_generation_queue.segmented.yaml
+  canonical_queue_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  canonical_queue_content_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  source_image: assets/source/character.png
+  source_image_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+layers:
+  - layer_id: face_base
+    selected:
+      protect_candidate_id: face_base-df73dfb7d3-protect-0123456789ab-001
+      edge_extension_candidate_id: face_base-df73dfb7d3-edge_extension-0123456789ab-001
+      inpaint_candidate_id: face_base-df73dfb7d3-inpaint-0123456789ab-001
+    confidence: 0.55
+    status: needs_review
+    requires_review: true
+    review_reasons: [human_mask_approval_required]
+    derivation:
+      protect: {method: target_erosion}
+      edge_extension: {method: target_dilation_ring}
+      inpaint: {method: bilateral_face_shape_under_front_hair}
+summary:
+  layers: 1
+  selected_candidates: 3
+  all_layers_require_review: true
+  canonical_queue_modified: false
