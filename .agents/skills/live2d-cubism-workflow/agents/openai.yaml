@@ -1,4 +1,4 @@
 interface:
   display_name: "Live2D Cubism Workflow"
-  short_description: "Operate Cubism with approved Live2D assets"
-  default_prompt: "Use $live2d-cubism-workflow with this approved PSD and layer map to prepare a safe Cubism action plan."
+  short_description: "Operate and evaluate Cubism with approved assets"
+  default_prompt: "Use $live2d-cubism-workflow with this approved PSD and layer map to run a safe Cubism plan, record evaluation checks, and create feedback when needed."

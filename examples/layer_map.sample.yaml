@@ -1,20 +1,69 @@
 schema_version: 1
+validation_mode: strict
 project: sample-one-image-model
+derived_from:
+  asset_generation_queue: examples/asset_generation_queue.sample.yaml
+  queue_schema_version: 2
 source_psd: generated/model_import.psd
 canvas:
   width: 2048
   height: 2048
   color_mode: RGBA
 layers:
-  - path: Face/face_base
-    name: face_base
-    layer_id: face_base
-    role: face_base
-    side: C
-    source: generated/parts/face_base.png
+  - path: Eyes/Left/eye_white_L
+    name: eye_white_L
+    layer_id: eye_white_L
+    role: eye_white
+    side: L
+    source: generated/parts/eye_white_L.png
+    order: 10
     inferred: false
     review_required: false
-    readiness: approved
+    readiness: planned
+    required: true
+  - path: Eyes/Right/eye_white_R
+    name: eye_white_R
+    layer_id: eye_white_R
+    role: eye_white
+    side: R
+    source: generated/parts/eye_white_R.png
+    order: 20
+    inferred: false
+    review_required: false
+    readiness: planned
+    required: true
+  - path: Mouth/mouth_inner
+    name: mouth_inner
+    layer_id: mouth_inner
+    role: mouth_inner
+    side: C
+    source: generated/parts/mouth_inner.png
+    order: 30
+    inferred: true
+    review_required: true
+    readiness: generated
+    required: true
+  - path: Hair/Back/hair_back
+    name: hair_back
+    layer_id: hair_back
+    role: hair_back
+    side: C
+    source: generated/parts/hair_back.png
+    order: 40
+    inferred: false
+    review_required: false
+    readiness: planned
+    required: true
+  - path: Body/torso_base
+    name: torso_base
+    layer_id: torso_base
+    role: torso_base
+    side: C
+    source: generated/parts/torso_base.png
+    order: 50
+    inferred: false
+    review_required: false
+    readiness: planned
     required: true
   - path: Face/face_hidden_fill
     name: face_hidden_fill
@@ -22,6 +71,7 @@ layers:
     role: face_hidden_fill
     side: C
     source: generated/parts/face_hidden_fill.png
+    order: 60
     inferred: true
     review_required: true
     readiness: generated

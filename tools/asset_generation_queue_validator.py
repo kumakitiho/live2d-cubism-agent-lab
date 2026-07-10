@@ -9,9 +9,10 @@ from typing import Any
 
 import yaml
 
-from tools.artifact_validation import ArtifactIssue, load_yaml_mapping
+from tools.artifact_validation import ArtifactIssue, load_yaml_mapping, validate_layer_map
 from tools.asset_feedback_validator import load_layer_map_context, validate_asset_feedback
-from tools.asset_manifest_validator import load_asset_manifest
+from tools.asset_manifest_validator import load_asset_manifest, validate_asset_manifest
+from tools.asset_queue_builder import derive_asset_manifest, derive_layer_map
 
 REQUIRED_PART_FAMILIES = {"eyes", "mouth", "hair", "body", "hidden_fill"}
 JOB_STATUSES = {"planned", "running", "generated", "approved", "rejected", "blocked"}
@@ -29,7 +30,9 @@ MERGE_VALIDATION_KEYS = {
 @dataclass(frozen=True)
 class QueueValidationReport:
     issues: tuple[ArtifactIssue, ...]
+    warnings: tuple[ArtifactIssue, ...]
     merge_ready: bool
+    validation_mode: str
 
     @property
     def valid(self) -> bool:
@@ -39,7 +42,9 @@ class QueueValidationReport:
         return {
             "valid": self.valid,
             "merge_ready": self.merge_ready,
+            "validation_mode": self.validation_mode,
             "issues": [issue.format() for issue in self.issues],
+            "warnings": [warning.format() for warning in self.warnings],
         }
 
 
@@ -98,27 +103,117 @@ def validate_asset_generation_queue(
     feedback_documents: Mapping[str, Mapping[str, Any]] | None = None,
     manifest_document: Mapping[str, Any] | None = None,
     output_manifest_path: Path | None = None,
+    layer_map_document: Mapping[str, Any] | None = None,
+    output_layer_map_path: Path | None = None,
+    queue_ref: str | None = None,
     base_dir: Path | None = None,
 ) -> QueueValidationReport:
     issues: list[ArtifactIssue] = []
+    warnings: list[ArtifactIssue] = []
+    raw_validation_mode = data.get("validation_mode")
+    validation_mode = raw_validation_mode if raw_validation_mode in {"strict", "dev"} else "strict"
+
+    def record(issue: ArtifactIssue, *, warning_in_dev: bool = False) -> None:
+        if validation_mode == "dev" and warning_in_dev:
+            warnings.append(issue)
+        else:
+            issues.append(issue)
+
     for key in (
         "schema_version",
+        "validation_mode",
         "project",
         "source_image",
         "character_spec",
+        "canvas",
+        "derivatives",
+        "import_constraints",
         "feedback_inputs",
+        "assets",
         "jobs",
         "merge_gate",
     ):
         if key not in data:
             issues.append(ArtifactIssue(key, "is required"))
 
-    if data.get("schema_version") != 1:
-        issues.append(ArtifactIssue("schema_version", "must equal 1"))
-    for key in ("project", "source_image", "character_spec"):
+    if data.get("schema_version") != 2:
+        issues.append(ArtifactIssue("schema_version", "must equal 2"))
+    if raw_validation_mode not in {"strict", "dev"}:
+        issues.append(ArtifactIssue("validation_mode", "must be strict or dev"))
+    for key in ("project", "character_spec"):
         value = data.get(key)
         if not isinstance(value, str) or not value.strip():
             issues.append(ArtifactIssue(key, "must be a non-empty string"))
+
+    source_image = data.get("source_image")
+    if not isinstance(source_image, Mapping):
+        issues.append(ArtifactIssue("source_image", "must be a mapping"))
+    else:
+        for key in ("path", "rights_status"):
+            value = source_image.get(key)
+            if not isinstance(value, str) or not value.strip():
+                issues.append(ArtifactIssue(f"source_image.{key}", "must be a non-empty string"))
+
+    derivatives_value = data.get("derivatives")
+    if not isinstance(derivatives_value, Mapping):
+        issues.append(ArtifactIssue("derivatives", "must be a mapping"))
+    else:
+        derivative_suffixes = {
+            "asset_manifest": {".yaml", ".yml"},
+            "layer_map": {".yaml", ".yml"},
+            "model_import_psd": {".psd"},
+        }
+        for key, suffixes in derivative_suffixes.items():
+            value = derivatives_value.get(key)
+            if not isinstance(value, str) or Path(value).suffix.lower() not in suffixes:
+                issues.append(
+                    ArtifactIssue(
+                        f"derivatives.{key}",
+                        f"must use one of these suffixes: {sorted(suffixes)}",
+                    )
+                )
+
+    asset_ids: set[str] = set()
+    asset_readiness: dict[str, object] = {}
+    assets = data.get("assets")
+    if not isinstance(assets, list) or not assets:
+        issues.append(ArtifactIssue("assets", "must be a non-empty list"))
+    else:
+        for index, asset in enumerate(assets):
+            base = f"assets[{index}]"
+            if not isinstance(asset, Mapping):
+                issues.append(ArtifactIssue(base, "must be a mapping"))
+                continue
+            layer_id = asset.get("layer_id")
+            if isinstance(layer_id, str) and layer_id.strip():
+                asset_ids.add(layer_id)
+                asset_readiness[layer_id] = asset.get("readiness")
+            layer_path = asset.get("layer_path")
+            if not isinstance(layer_path, str) or not layer_path.strip():
+                issues.append(ArtifactIssue(f"{base}.layer_path", "must be a non-empty string"))
+
+    try:
+        derived_manifest = derive_asset_manifest(data)
+        derived_layer_map = derive_layer_map(data)
+    except ValueError as exc:
+        issues.append(ArtifactIssue("derived_artifacts", str(exc)))
+    else:
+        manifest_report = validate_asset_manifest(derived_manifest)
+        for manifest_error in manifest_report.errors:
+            issues.append(
+                ArtifactIssue(
+                    f"derived_manifest.{manifest_error.path}",
+                    manifest_error.message,
+                )
+            )
+        for layer_error in validate_layer_map(derived_layer_map):
+            issues.append(
+                ArtifactIssue(
+                    f"derived_layer_map.{layer_error.path}",
+                    layer_error.message,
+                )
+            )
+
     feedback_inputs = data.get("feedback_inputs")
     feedback_input_refs: set[str] = set()
     if not isinstance(feedback_inputs, list) or not all(
@@ -152,7 +247,6 @@ def validate_asset_generation_queue(
                 "operations",
                 "can_run_in_parallel",
                 "depends_on",
-                "outputs",
                 "feedback_refs",
                 "status",
                 "validation",
@@ -178,7 +272,7 @@ def validate_asset_generation_queue(
             else:
                 family_to_job[family] = job_id
 
-            for key in ("targets", "operations", "outputs"):
+            for key in ("targets", "operations"):
                 if not _is_string_list(job.get(key)):
                     issues.append(
                         ArtifactIssue(f"{base}.{key}", "must be a non-empty list of strings")
@@ -259,12 +353,17 @@ def validate_asset_generation_queue(
                         values.append(value)
                 job_validation_ready = all(values)
             if status == "approved":
-                if not job_validation_ready:
-                    issues.append(
+                targets_ready = isinstance(targets, list) and all(
+                    isinstance(target, str) and asset_readiness.get(target) == "approved"
+                    for target in targets
+                )
+                if not job_validation_ready or not targets_ready:
+                    record(
                         ArtifactIssue(
                             f"{base}.validation",
-                            "all required validations must be true for an approved job",
-                        )
+                            "approved jobs require true validations and approved target assets",
+                        ),
+                        warning_in_dev=True,
                     )
                 else:
                     approved_jobs.add(job_id)
@@ -284,6 +383,10 @@ def validate_asset_generation_queue(
                 issues.append(
                     ArtifactIssue(f"jobs.{job_id}.depends_on", "job cannot depend on itself")
                 )
+        for target in sorted(set(target_to_job) - asset_ids):
+            issues.append(ArtifactIssue("jobs.targets", f"unknown canonical asset: {target}"))
+        for layer_id in sorted(asset_ids - set(target_to_job)):
+            issues.append(ArtifactIssue("assets", f"asset is not assigned to a job: {layer_id}"))
 
     feedback_gate_verified = not feedback_input_refs
     if feedback_input_refs and feedback_documents is not None:
@@ -355,6 +458,13 @@ def validate_asset_generation_queue(
                     "rejected",
                 }:
                     feedback_gate_verified = False
+                    if validation_mode == "dev":
+                        warnings.append(
+                            ArtifactIssue(
+                                f"{base}.status",
+                                "unresolved feedback prevents merge readiness",
+                            )
+                        )
 
         unknown_refs = set(feedback_ref_to_job) - feedback_ids
         for feedback_id in sorted(unknown_refs):
@@ -419,66 +529,116 @@ def validate_asset_generation_queue(
             merge_validations_ready = all(merge_values)
             blocking_feedback_declared = validation.get("blocking_feedback_resolved") is True
             if blocking_feedback_declared and not feedback_gate_verified:
-                issues.append(
+                record(
                     ArtifactIssue(
                         "merge_gate.validation.blocking_feedback_resolved",
                         "cannot be true while feedback is unresolved or unverified",
-                    )
+                    ),
+                    warning_in_dev=True,
                 )
 
-        output_manifest = merge_gate.get("output_manifest")
-        if not isinstance(output_manifest, str) or not output_manifest.strip():
-            issues.append(ArtifactIssue("merge_gate.output_manifest", "must be a non-empty string"))
-        elif output_manifest_path is not None:
-            root = (base_dir or Path.cwd()).resolve()
-            declared_manifest_path = _resolve_path(root, output_manifest).resolve()
-            if declared_manifest_path != output_manifest_path.resolve():
-                issues.append(
-                    ArtifactIssue(
-                        "merge_gate.output_manifest",
-                        "must match the manifest used for handoff validation",
-                    )
+    derivatives = data.get("derivatives")
+    declared_manifest = (
+        derivatives.get("asset_manifest") if isinstance(derivatives, Mapping) else None
+    )
+    if not isinstance(declared_manifest, str) or not declared_manifest.strip():
+        issues.append(ArtifactIssue("derivatives.asset_manifest", "must be a non-empty string"))
+    elif output_manifest_path is not None:
+        root = (base_dir or Path.cwd()).resolve()
+        declared_manifest_path = _resolve_path(root, declared_manifest).resolve()
+        if declared_manifest_path != output_manifest_path.resolve():
+            issues.append(
+                ArtifactIssue(
+                    "derivatives.asset_manifest",
+                    "must match the manifest used for handoff validation",
                 )
-
-        if manifest_document is not None:
-            if output_manifest_path is None:
-                issues.append(
-                    ArtifactIssue(
-                        "merge_gate.output_manifest",
-                        "manifest path is required when manifest data is supplied",
-                    )
-                )
-            if manifest_document.get("project") != data.get("project"):
-                issues.append(
-                    ArtifactIssue(
-                        "merge_gate.output_manifest.project",
-                        "manifest project must match queue project",
-                    )
-                )
-            manifest_source = manifest_document.get("source_image")
-            manifest_source_path = (
-                manifest_source.get("path") if isinstance(manifest_source, Mapping) else None
             )
-            queue_source_path = data.get("source_image")
-            if not isinstance(manifest_source_path, str) or not isinstance(queue_source_path, str):
+
+    if manifest_document is not None:
+        if output_manifest_path is None:
+            issues.append(
+                ArtifactIssue(
+                    "derivatives.asset_manifest",
+                    "manifest path is required when manifest data is supplied",
+                )
+            )
+        try:
+            derived_from = manifest_document.get("derived_from")
+            manifest_queue_ref = (
+                derived_from.get("asset_generation_queue")
+                if isinstance(derived_from, Mapping)
+                else None
+            )
+            expected_manifest = derive_asset_manifest(
+                data,
+                queue_ref=(
+                    queue_ref
+                    if queue_ref is not None
+                    else manifest_queue_ref
+                    if isinstance(manifest_queue_ref, str)
+                    else None
+                ),
+            )
+        except ValueError as exc:
+            issues.append(ArtifactIssue("derivatives.asset_manifest", str(exc)))
+        else:
+            if dict(manifest_document) != expected_manifest:
                 issues.append(
                     ArtifactIssue(
-                        "merge_gate.output_manifest.source_image",
-                        "queue and manifest source image paths are required",
+                        "derivatives.asset_manifest",
+                        "manifest must be regenerated from the canonical queue",
                     )
                 )
-            else:
-                root = (base_dir or Path.cwd()).resolve()
-                if (
-                    _resolve_path(root, manifest_source_path).resolve()
-                    != _resolve_path(root, queue_source_path).resolve()
-                ):
-                    issues.append(
-                        ArtifactIssue(
-                            "merge_gate.output_manifest.source_image",
-                            "manifest source image must match queue source image",
-                        )
+
+    declared_layer_map = derivatives.get("layer_map") if isinstance(derivatives, Mapping) else None
+    if not isinstance(declared_layer_map, str) or not declared_layer_map.strip():
+        issues.append(ArtifactIssue("derivatives.layer_map", "must be a non-empty string"))
+    elif output_layer_map_path is not None:
+        root = (base_dir or Path.cwd()).resolve()
+        declared_layer_map_path = _resolve_path(root, declared_layer_map).resolve()
+        if declared_layer_map_path != output_layer_map_path.resolve():
+            issues.append(
+                ArtifactIssue(
+                    "derivatives.layer_map",
+                    "must match the layer map used for handoff validation",
+                )
+            )
+
+    if layer_map_document is not None:
+        if output_layer_map_path is None:
+            issues.append(
+                ArtifactIssue(
+                    "derivatives.layer_map",
+                    "layer map path is required when layer map data is supplied",
+                )
+            )
+        try:
+            derived_from = layer_map_document.get("derived_from")
+            layer_map_queue_ref = (
+                derived_from.get("asset_generation_queue")
+                if isinstance(derived_from, Mapping)
+                else None
+            )
+            expected_layer_map = derive_layer_map(
+                data,
+                queue_ref=(
+                    queue_ref
+                    if queue_ref is not None
+                    else layer_map_queue_ref
+                    if isinstance(layer_map_queue_ref, str)
+                    else None
+                ),
+            )
+        except ValueError as exc:
+            issues.append(ArtifactIssue("derivatives.layer_map", str(exc)))
+        else:
+            if dict(layer_map_document) != expected_layer_map:
+                issues.append(
+                    ArtifactIssue(
+                        "derivatives.layer_map",
+                        "layer map must be regenerated from the canonical queue",
                     )
+                )
 
     merge_ready = (
         not issues
@@ -487,7 +647,12 @@ def validate_asset_generation_queue(
         and merge_validations_ready
         and feedback_gate_verified
     )
-    return QueueValidationReport(issues=tuple(issues), merge_ready=merge_ready)
+    return QueueValidationReport(
+        issues=tuple(issues),
+        warnings=tuple(warnings),
+        merge_ready=merge_ready,
+        validation_mode=validation_mode,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -510,6 +675,17 @@ def main(argv: list[str] | None = None) -> int:
             _resolve_path(base_dir, str(args.manifest)) if args.manifest is not None else None
         )
         manifest = load_asset_manifest(manifest_path) if manifest_path is not None else None
+        layer_map_path: Path | None = None
+        layer_map: dict[str, Any] | None = None
+        if manifest is not None:
+            derivatives = data.get("derivatives")
+            layer_map_ref = (
+                derivatives.get("layer_map") if isinstance(derivatives, Mapping) else None
+            )
+            if not isinstance(layer_map_ref, str) or not layer_map_ref.strip():
+                raise ValueError("queue derivatives.layer_map is required for handoff validation")
+            layer_map_path = _resolve_path(base_dir, layer_map_ref)
+            layer_map = load_yaml_mapping(layer_map_path)
     except (FileNotFoundError, ValueError, yaml.YAMLError) as exc:
         print(f"ERROR: {exc}")
         return 2
@@ -519,6 +695,9 @@ def main(argv: list[str] | None = None) -> int:
         feedback_documents=feedback_documents,
         manifest_document=manifest,
         output_manifest_path=manifest_path,
+        layer_map_document=layer_map,
+        output_layer_map_path=layer_map_path,
+        queue_ref=args.queue.as_posix(),
         base_dir=base_dir,
     )
     if args.json:
@@ -526,8 +705,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"valid: {str(report.valid).lower()}")
         print(f"merge_ready: {str(report.merge_ready).lower()}")
+        print(f"validation_mode: {report.validation_mode}")
         for issue in report.issues:
             print(f"ERROR: {issue.format()}")
+        for warning in report.warnings:
+            print(f"WARN: {warning.format()}")
     if not report.valid:
         return 1
     if args.require_merge_ready and not report.merge_ready:

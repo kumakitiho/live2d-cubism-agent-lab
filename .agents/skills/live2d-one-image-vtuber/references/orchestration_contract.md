@@ -6,11 +6,11 @@
 
 ## Stage 2: asset generation
 
-入力はcharacter spec。出力は `asset_generation_plan.yaml`、`asset_generation_queue.yaml`、`asset_manifest.yaml`、`layer_map.yaml`、`model_import.psd`。queue merge gateとmanifest handoff gateを両方要求する。
+入力はcharacter spec。状態の単一ソースは `asset_generation_queue.yaml`。`asset_manifest.yaml` と `layer_map.yaml` はqueueから生成し、`model_import.psd` はそのmanifestを入力にbuildする。queue merge gateとmanifest handoff gateを両方要求する。
 
 ## Stage 3: Cubism
 
-入力は承認済みPSD、layer map、action plan。出力はoperation report、evidence、必要に応じて `asset_feedback.yaml`。
+入力は承認済みPSD、layer map、action plan。出力はoperation report、evidence、`cubism_evaluation.yaml`、必要に応じて変換した `asset_feedback.yaml`。
 
 ## Feedback transition
 

@@ -1,68 +1,163 @@
-schema_version: 1
+schema_version: 2
+validation_mode: strict
 project: replace-me
-source_image: assets/source/character.png
+source_image:
+  path: assets/source/character.png
+  rights_status: needs_confirmation
 character_spec: generated/character_spec.yaml
+canvas:
+  width: 2048
+  height: 2048
+  color_mode: RGBA
+  bit_depth: 8
+  color_profile: sRGB
+derivatives:
+  asset_manifest: generated/asset_manifest.yaml
+  layer_map: generated/layer_map.yaml
+  model_import_psd: generated/model_import.psd
+import_constraints:
+  unique_layer_names: true
+  one_drawable_per_layer: true
+  rgb_8bit_srgb: true
+  same_canvas_alignment: false
+  no_reference_layers: true
+  masks_resolved: false
+  inferred_assets_reviewed: false
 feedback_inputs: []
+assets:
+  - layer_id: eye_white_L
+    layer_name: eye_white_L
+    layer_path: Eyes/Left/eye_white_L
+    role: eye_white
+    side: L
+    source_file: generated/parts/eye_white_L.png
+    mask_file: generated/masks/eye_white_L.png
+    prompt_id: part-eye-white-L
+    generation_method: mask_extract
+    order: 10
+    required: true
+    inferred: false
+    review_required: false
+    readiness: planned
+    include_in_import: true
+  - layer_id: eye_white_R
+    layer_name: eye_white_R
+    layer_path: Eyes/Right/eye_white_R
+    role: eye_white
+    side: R
+    source_file: generated/parts/eye_white_R.png
+    mask_file: generated/masks/eye_white_R.png
+    prompt_id: part-eye-white-R
+    generation_method: mask_extract
+    order: 20
+    required: true
+    inferred: false
+    review_required: false
+    readiness: planned
+    include_in_import: true
+  - layer_id: mouth_inner
+    layer_name: mouth_inner
+    layer_path: Mouth/mouth_inner
+    role: mouth_inner
+    side: C
+    source_file: generated/parts/mouth_inner.png
+    mask_file: generated/masks/mouth_inner.png
+    prompt_id: part-mouth-inner
+    generation_method: inpaint
+    order: 30
+    required: true
+    inferred: true
+    review_required: true
+    readiness: planned
+    include_in_import: true
+  - layer_id: hair_back
+    layer_name: hair_back
+    layer_path: Hair/Back/hair_back
+    role: hair_back
+    side: C
+    source_file: generated/parts/hair_back.png
+    mask_file: generated/masks/hair_back.png
+    prompt_id: part-hair-back
+    generation_method: mask_extract
+    order: 40
+    required: true
+    inferred: false
+    review_required: false
+    readiness: planned
+    include_in_import: true
+  - layer_id: torso_base
+    layer_name: torso_base
+    layer_path: Body/torso_base
+    role: torso_base
+    side: C
+    source_file: generated/parts/torso_base.png
+    mask_file: generated/masks/torso_base.png
+    prompt_id: part-torso-base
+    generation_method: mask_extract
+    order: 50
+    required: true
+    inferred: false
+    review_required: false
+    readiness: planned
+    include_in_import: true
+  - layer_id: face_hidden_fill
+    layer_name: face_hidden_fill
+    layer_path: Face/face_hidden_fill
+    role: face_hidden_fill
+    side: C
+    source_file: generated/parts/face_hidden_fill.png
+    mask_file: generated/masks/face_hidden_fill.png
+    prompt_id: part-face-hidden-fill
+    generation_method: inpaint
+    order: 60
+    required: true
+    inferred: true
+    review_required: true
+    readiness: planned
+    include_in_import: true
 jobs:
   - id: eyes
     part_family: eyes
-    targets: [eye_white_L, eye_white_R, eye_iris_L, eye_iris_R]
+    targets: [eye_white_L, eye_white_R]
     operations: [segment, mask_extract]
     can_run_in_parallel: true
     depends_on: []
-    outputs: [generated/parts/eye_white_L.png, generated/parts/eye_white_R.png]
     feedback_refs: []
     status: planned
-    validation:
-      same_canvas_alignment: false
-      transparent_png: false
-      style_match_reviewed: false
+    validation: {same_canvas_alignment: false, transparent_png: false, style_match_reviewed: false}
   - id: mouth
     part_family: mouth
-    targets: [mouth_upper, mouth_lower, mouth_inner]
+    targets: [mouth_inner]
     operations: [segment, inpaint]
     can_run_in_parallel: true
     depends_on: []
-    outputs: [generated/parts/mouth_upper.png, generated/parts/mouth_inner.png]
     feedback_refs: []
     status: planned
-    validation:
-      same_canvas_alignment: false
-      transparent_png: false
-      style_match_reviewed: false
+    validation: {same_canvas_alignment: false, transparent_png: false, style_match_reviewed: false}
   - id: hair
     part_family: hair
-    targets: [hair_front_C, hair_side_L, hair_side_R, hair_back]
+    targets: [hair_back]
     operations: [segment, mask_extract]
     can_run_in_parallel: true
     depends_on: []
-    outputs: [generated/parts/hair_front_C.png, generated/parts/hair_back.png]
     feedback_refs: []
     status: planned
-    validation:
-      same_canvas_alignment: false
-      transparent_png: false
-      style_match_reviewed: false
+    validation: {same_canvas_alignment: false, transparent_png: false, style_match_reviewed: false}
   - id: body
     part_family: body
-    targets: [neck_base, torso_base, clothes_upper]
+    targets: [torso_base]
     operations: [segment, mask_extract]
     can_run_in_parallel: true
     depends_on: []
-    outputs: [generated/parts/torso_base.png, generated/parts/clothes_upper.png]
     feedback_refs: []
     status: planned
-    validation:
-      same_canvas_alignment: false
-      transparent_png: false
-      style_match_reviewed: false
+    validation: {same_canvas_alignment: false, transparent_png: false, style_match_reviewed: false}
   - id: hidden_fill
     part_family: hidden_fill
-    targets: [face_hidden_fill, hair_back_hidden_fill]
-    operations: [mask, inpaint]
+    targets: [face_hidden_fill]
+    operations: [build_mask, inpaint]
     can_run_in_parallel: true
     depends_on: []
-    outputs: [generated/parts/face_hidden_fill.png, generated/parts/hair_back_hidden_fill.png]
     feedback_refs: []
     status: planned
     validation:
@@ -74,10 +169,9 @@ merge_gate:
   strategy: all_required_jobs_approved
   required_jobs: [eyes, mouth, hair, body, hidden_fill]
   validation:
-    unique_layer_ids: false
+    unique_layer_ids: true
     same_canvas_alignment: false
     transparent_pngs: false
     inferred_assets_reviewed: false
     manifest_valid: false
     blocking_feedback_resolved: false
-  output_manifest: generated/asset_manifest.yaml

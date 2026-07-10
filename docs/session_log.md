@@ -128,3 +128,32 @@
 - pip check / `git diff --check`: pass
 - 最終サブエージェントレビュー: 追加指摘なし
 - 実機Cubism / VTube Studioの目視QAは実素材と実機環境が必要なため未実施
+
+## 2026-07-10 — Queue SSOT and Cubism evaluation
+
+### 判断
+
+- `asset_generation_queue.yaml` を素材状態、layer metadata、派生出力先、import制約の単一ソースにした。
+- `asset_manifest.yaml` と `layer_map.yaml` はqueueから決定的に生成し、直接編集しない。
+- `cubism_evaluation.yaml` にeye、mouth、mesh、textureの基本評価を集約し、WARN/FAILだけをasset feedbackへ変換する。
+- `strict` はhandoff向け、`dev` は構造安全性を維持したまま開発中WARNを許容するmodeとした。
+
+### Harness / review対応
+
+- builderの派生出力をbase-dir内に限定した。
+- manifestとlayer mapの両方をactual queue ref付き派生物と完全一致検証するようにした。
+- 2つの派生YAMLは事前衝突検査、temp書込み、backup、失敗時rollbackで更新するようにした。
+- basic evaluationカテゴリごとに `required: true` のcheckを必須化した。
+- strict WARNとFAILは評価失敗のままfeedback変換可能、PASS/INCOMPLETEは変換不可とした。
+- GitHub Actionsでpush / pull request時にWindows・Python 3.11上のpytestを実行するようにした。
+
+### Final verification
+
+- Skill quick validation: 4 Skillすべてpass
+- Ruff lint / 変更対象format check: pass
+- Mypy: 29 source files pass
+- Pytest: 104 passed
+- editable install / console entrypoints / pip check / `git diff --check`: pass
+- forward test: queue更新、派生再生成、evaluation feedback loopの境界を確認
+- 最終サブエージェントレビュー: 追加指摘なし
+- 実画像生成、実PSD writer、Cubism / VTube Studio実機QAは未接続

@@ -73,7 +73,7 @@ def test_duplicate_layer_id_is_rejected() -> None:
     assert isinstance(parts, list)
     duplicate = deepcopy(parts[0])
     duplicate["layer_name"] = "different_name"
-    duplicate["order"] = 30
+    duplicate["order"] = 70
     parts.append(duplicate)
 
     report = validate_asset_manifest(manifest)
@@ -86,7 +86,7 @@ def test_inferred_asset_must_require_review() -> None:
     manifest = deepcopy(_sample_manifest())
     parts = manifest["parts"]
     assert isinstance(parts, list)
-    inferred_part = parts[1]
+    inferred_part = next(part for part in parts if part["inferred"] is True)
     inferred_part["review_required"] = False
 
     report = validate_asset_manifest(manifest)
@@ -256,7 +256,7 @@ def test_psd_builder_returns_ordered_plan_without_creating_psd(tmp_path: Path) -
 
     layers = plan["layers"]
     assert isinstance(layers, list)
-    assert [layer["order"] for layer in layers] == [10, 20]
+    assert [layer["order"] for layer in layers] == [10, 20, 30, 40, 50, 60]
     assert plan["status"] == "plan_only"
     assert plan["ready_to_build"] is False
     assert plan["can_build"] is False

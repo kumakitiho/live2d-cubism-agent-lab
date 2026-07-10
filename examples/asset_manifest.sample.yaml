@@ -1,5 +1,9 @@
 schema_version: 1
+validation_mode: strict
 project: sample-one-image-model
+derived_from:
+  asset_generation_queue: examples/asset_generation_queue.sample.yaml
+  queue_schema_version: 2
 source_image:
   path: assets/source/character.png
   rights_status: confirmed
@@ -11,7 +15,7 @@ canvas:
   color_profile: sRGB
 output:
   model_import_psd: generated/model_import.psd
-  layer_map: generated/layer_map.yaml
+  layer_map: examples/layer_map.sample.yaml
 import_constraints:
   unique_layer_names: true
   one_drawable_per_layer: true
@@ -21,19 +25,75 @@ import_constraints:
   masks_resolved: false
   inferred_assets_reviewed: false
 parts:
-  - layer_id: face_base
-    layer_name: face_base
-    role: face_base
-    side: C
-    source_file: generated/parts/face_base.png
-    mask_file: generated/masks/face_base.png
-    prompt_id: part-face_base
+  - layer_id: eye_white_L
+    layer_name: eye_white_L
+    role: eye_white
+    side: L
+    source_file: generated/parts/eye_white_L.png
+    mask_file: generated/masks/eye_white_L.png
+    prompt_id: part-eye-white-L
     generation_method: mask_extract
     order: 10
     required: true
     inferred: false
     review_required: false
-    readiness: approved
+    readiness: planned
+    include_in_import: true
+  - layer_id: eye_white_R
+    layer_name: eye_white_R
+    role: eye_white
+    side: R
+    source_file: generated/parts/eye_white_R.png
+    mask_file: generated/masks/eye_white_R.png
+    prompt_id: part-eye-white-R
+    generation_method: mask_extract
+    order: 20
+    required: true
+    inferred: false
+    review_required: false
+    readiness: planned
+    include_in_import: true
+  - layer_id: mouth_inner
+    layer_name: mouth_inner
+    role: mouth_inner
+    side: C
+    source_file: generated/parts/mouth_inner.png
+    mask_file: generated/masks/mouth_inner.png
+    prompt_id: part-mouth-inner
+    generation_method: inpaint
+    order: 30
+    required: true
+    inferred: true
+    review_required: true
+    readiness: generated
+    include_in_import: true
+  - layer_id: hair_back
+    layer_name: hair_back
+    role: hair_back
+    side: C
+    source_file: generated/parts/hair_back.png
+    mask_file: generated/masks/hair_back.png
+    prompt_id: part-hair-back
+    generation_method: mask_extract
+    order: 40
+    required: true
+    inferred: false
+    review_required: false
+    readiness: planned
+    include_in_import: true
+  - layer_id: torso_base
+    layer_name: torso_base
+    role: torso_base
+    side: C
+    source_file: generated/parts/torso_base.png
+    mask_file: generated/masks/torso_base.png
+    prompt_id: part-torso-base
+    generation_method: mask_extract
+    order: 50
+    required: true
+    inferred: false
+    review_required: false
+    readiness: planned
     include_in_import: true
   - layer_id: face_hidden_fill
     layer_name: face_hidden_fill
@@ -41,9 +101,9 @@ parts:
     side: C
     source_file: generated/parts/face_hidden_fill.png
     mask_file: generated/masks/face_hidden_fill.png
-    prompt_id: part-face_hidden_fill
+    prompt_id: part-face-hidden-fill
     generation_method: inpaint
-    order: 20
+    order: 60
     required: true
     inferred: true
     review_required: true

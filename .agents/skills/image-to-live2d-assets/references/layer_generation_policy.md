@@ -11,8 +11,8 @@
 
 1. 1回に1つのpart familyだけを扱う。
 2. sourceと同じキャンバス・同じ原点で透過PNGを生成する。
-3. mask、prompt、生成tool、入力、出力をmanifestで追跡する。
-4. 結果を `approved`、`generated`、`rejected` のいずれかへ更新する。
+3. mask、prompt、生成tool、入力、出力をcanonical queueで追跡する。
+4. 結果をqueue上で `approved`、`generated`、`rejected` のいずれかへ更新し、manifest/layer mapを再生成する。
 5. 同じ失敗を3回繰り返したら手段を変え、無制限に再生成しない。
 
 ## Prompt contract

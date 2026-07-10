@@ -8,6 +8,7 @@ import yaml
 
 from tools.artifact_validation import load_yaml_mapping
 from tools.asset_generation_queue_validator import main, validate_asset_generation_queue
+from tools.asset_queue_builder import derive_asset_manifest, derive_layer_map
 
 
 def _sample() -> dict[str, object]:
@@ -17,8 +18,12 @@ def _sample() -> dict[str, object]:
 def _approve_all_jobs_and_gates(data: dict[str, object]) -> None:
     jobs = data["jobs"]
     merge_gate = data["merge_gate"]
+    assets = data["assets"]
     assert isinstance(jobs, list)
     assert isinstance(merge_gate, dict)
+    assert isinstance(assets, list)
+    for asset in assets:
+        asset["readiness"] = "approved"
     for job in jobs:
         job["status"] = "approved"
         for key in job["validation"]:
@@ -35,21 +40,23 @@ def _write_yaml(path: Path, data: dict[str, Any]) -> None:
 
 
 def _write_cli_fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-    layer_map = load_yaml_mapping(Path("examples/layer_map.sample.yaml"))
     feedback = load_yaml_mapping(Path("examples/asset_feedback.sample.yaml"))
     queue = load_yaml_mapping(Path("examples/asset_generation_queue.sample.yaml"))
-    manifest = load_yaml_mapping(Path("examples/asset_manifest.sample.yaml"))
 
     feedback["model_refs"]["layer_map"] = "layer_map.yaml"
     feedback["feedback"][0]["status"] = "resolved"
     queue["feedback_inputs"] = ["feedback.yaml"]
-    queue["merge_gate"]["output_manifest"] = "manifest.yaml"
+    queue["derivatives"]["asset_manifest"] = "manifest.yaml"
+    queue["derivatives"]["layer_map"] = "layer_map.yaml"
     _approve_all_jobs_and_gates(queue)
 
     layer_map_path = tmp_path / "layer_map.yaml"
     feedback_path = tmp_path / "feedback.yaml"
     queue_path = tmp_path / "queue.yaml"
     manifest_path = tmp_path / "manifest.yaml"
+    queue_ref = queue_path.as_posix()
+    layer_map = derive_layer_map(queue, queue_ref=queue_ref)
+    manifest = derive_asset_manifest(queue, queue_ref=queue_ref)
     _write_yaml(layer_map_path, layer_map)
     _write_yaml(feedback_path, feedback)
     _write_yaml(queue_path, queue)
@@ -74,6 +81,18 @@ def test_queue_requires_all_five_part_families() -> None:
 
     assert not report.valid
     assert any("missing required part family: mouth" in issue.message for issue in report.issues)
+
+
+def test_queue_requires_typed_derivative_paths() -> None:
+    data = deepcopy(_sample())
+    derivatives = data["derivatives"]
+    assert isinstance(derivatives, dict)
+    derivatives["asset_manifest"] = "generated/asset_manifest.txt"
+
+    report = validate_asset_generation_queue(data)
+
+    assert not report.valid
+    assert any("derivatives.asset_manifest" in issue.path for issue in report.issues)
 
 
 def test_queue_jobs_must_be_parallelizable() -> None:
@@ -112,7 +131,21 @@ def test_approved_job_requires_all_job_validations() -> None:
     report = validate_asset_generation_queue(data)
 
     assert not report.valid
-    assert any("all required validations must be true" in issue.message for issue in report.issues)
+    assert any("approved jobs require" in issue.message for issue in report.issues)
+
+
+def test_dev_mode_downgrades_approved_job_readiness_to_warning() -> None:
+    data = deepcopy(_sample())
+    jobs = data["jobs"]
+    assert isinstance(jobs, list)
+    data["validation_mode"] = "dev"
+    jobs[0]["status"] = "approved"
+
+    report = validate_asset_generation_queue(data)
+
+    assert report.valid
+    assert not report.merge_ready
+    assert any("approved jobs require" in warning.message for warning in report.warnings)
 
 
 def test_merge_gate_rejects_unknown_job() -> None:
@@ -295,6 +328,26 @@ def test_queue_cli_rejects_handoff_manifest_source_mismatch(tmp_path: Path) -> N
     manifest = load_yaml_mapping(manifest_path)
     manifest["source_image"]["path"] = "assets/source/different.png"
     _write_yaml(manifest_path, manifest)
+
+    exit_code = main(
+        [
+            str(queue_path),
+            "--base-dir",
+            str(tmp_path),
+            "--manifest",
+            "manifest.yaml",
+            "--require-merge-ready",
+        ]
+    )
+
+    assert exit_code == 1
+
+
+def test_queue_cli_rejects_handoff_layer_map_drift(tmp_path: Path) -> None:
+    queue_path, _feedback_path, layer_map_path, _manifest_path = _write_cli_fixture(tmp_path)
+    layer_map = load_yaml_mapping(layer_map_path)
+    layer_map["layers"][0]["role"] = "edited-outside-queue"
+    _write_yaml(layer_map_path, layer_map)
 
     exit_code = main(
         [

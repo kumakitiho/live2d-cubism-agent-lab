@@ -34,6 +34,8 @@ material-planner = "tools.material_planner:main"
 asset-manifest-validator = "tools.asset_manifest_validator:main"
 asset-feedback-validator = "tools.asset_feedback_validator:main"
 asset-generation-queue-validator = "tools.asset_generation_queue_validator:main"
+asset-queue-builder = "tools.asset_queue_builder:main"
+cubism-evaluation = "tools.cubism_evaluation:main"
 psd-asset-builder = "tools.psd_asset_builder:main"
 validate-action-plan = "scripts.validate_action_plan:main"
 

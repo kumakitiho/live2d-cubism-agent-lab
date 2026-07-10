@@ -1,0 +1,61 @@
+schema_version: 1
+validation_mode: dev
+project: sample-one-image-model
+source_stage: live2d-cubism-workflow
+model_refs:
+  model_import_psd: generated/model_import.psd
+  layer_map: examples/layer_map.sample.yaml
+  action_plan_report: outputs/action_plan_report.md
+checks:
+  - id: eye-blink
+    category: eye
+    target_layer_ids: [eye_white_L, eye_white_R]
+    required: true
+    status: pass
+    evidence:
+      kind: parameter_probe
+      path: outputs/action_plan_report.md
+      description: 左右の目が0から1まで閉開し、欠けは見つからなかった
+    issue_type: null
+    severity: null
+    requested_action: null
+  - id: mouth-open-close
+    category: mouth
+    target_layer_ids: [mouth_inner]
+    required: true
+    status: warn
+    evidence:
+      kind: screenshot
+      path: outputs/mouth_open_warning.png
+      description: 口を最大まで開くと口内素材の上端が少し露出する
+    issue_type: deformation_break
+    severity: medium
+    requested_action:
+      action: redraw
+      details: 口内素材の上端を延長し、最大開口時の露出を解消する
+  - id: mesh-deformation
+    category: mesh
+    target_layer_ids: [face_hidden_fill]
+    required: true
+    status: pass
+    evidence:
+      kind: screenshot
+      path: outputs/mesh_evaluation.png
+      description: 顔向きXYの範囲でmeshの欠けや交差は見つからなかった
+    issue_type: null
+    severity: null
+    requested_action: null
+  - id: texture-integrity
+    category: texture
+    target_layer_ids: [hair_back]
+    required: true
+    status: pass
+    evidence:
+      kind: screenshot
+      path: outputs/texture_evaluation.png
+      description: 髪テクスチャの透明境界と色はsourceと整合している
+    issue_type: null
+    severity: null
+    requested_action: null
+summary:
+  result: warn

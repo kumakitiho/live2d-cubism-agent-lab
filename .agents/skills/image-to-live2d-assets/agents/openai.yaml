@@ -1,4 +1,4 @@
 interface:
   display_name: "Image to Live2D Assets"
-  short_description: "Build Live2D assets from an approved character spec"
-  default_prompt: "Use $image-to-live2d-assets with this approved character spec and source image to plan and validate a Live2D asset pack."
+  short_description: "Build canonical Live2D asset queues and derivatives"
+  default_prompt: "Use $image-to-live2d-assets with this approved character spec and source image to build a canonical asset queue and derive its manifest and layer map."

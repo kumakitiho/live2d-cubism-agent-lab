@@ -25,9 +25,10 @@ description: Live2DまたはVTuber制作で、承認済みmodel_import.psd、lay
 5. 実機操作前にBridgeまたは個別CLIをdry-runする。
 6. ユーザーが実行を求めた場合だけ `--execute` を付ける。
 7. operation report、スクリーンショット、パラメータ結果を確認する。
-8. 素材由来の問題があれば `assets/asset_feedback.template.yaml` から `asset_feedback.yaml` を作る。
-9. `python -m tools.asset_feedback_validator <feedback> --layer-map <layer-map>` を実行する。
-10. validator済みfeedbackを `$image-to-live2d-assets` へ返す。
+8. `assets/cubism_evaluation.template.yaml` にeye、mouth、mesh、textureの評価結果とevidenceを記録する。
+9. `python -m tools.cubism_evaluation validate <evaluation> --layer-map <layer-map>` を実行する。
+10. 素材由来のwarn/failがあれば `python -m tools.cubism_evaluation to-feedback <evaluation> --layer-map <layer-map> --output <feedback>` で `asset_feedback.yaml` に変換する。
+11. validator済みfeedbackを `$image-to-live2d-assets` へ返す。
 
 ## 操作境界
 
@@ -43,6 +44,7 @@ description: Live2DまたはVTuber制作で、承認済みmodel_import.psd、lay
 
 - `assets/action_plan.template.yaml`
 - `assets/asset_feedback.template.yaml`
+- `assets/cubism_evaluation.template.yaml`
 - `assets/rigging_plan.template.md`
 
 ## 主要コマンド
@@ -51,6 +53,7 @@ description: Live2DまたはVTuber制作で、承認済みmodel_import.psd、lay
 python -m scripts.validate_layer_map generated/layer_map.yaml
 python -m scripts.validate_action_plan examples/action_plan.real_assets.sample.yaml
 python -m tools.cubism_bridge run-action-plan examples/action_plan.real_assets.sample.yaml
+python -m tools.cubism_evaluation validate examples/cubism_evaluation.sample.yaml --layer-map examples/layer_map.sample.yaml
 python -m tools.asset_feedback_validator examples/asset_feedback.sample.yaml --layer-map examples/layer_map.sample.yaml
 ```
 

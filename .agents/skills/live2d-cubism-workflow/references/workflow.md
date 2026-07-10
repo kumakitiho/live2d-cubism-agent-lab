@@ -18,9 +18,10 @@
 ## Evaluation
 
 - UI自動化の失敗はoperation reportへ記録する。
-- 素材の欠け、境界、隠れ塗り、分割、style、transparencyの問題は `asset_feedback.yaml` へ記録する。
-- `target_layer_id`、severity、evidence、requested actionを必須にする。
-- feedbackはlayer mapと照合してから `image-to-live2d-assets` へ返す。
+- eye、mouth、mesh、textureを `cubism_evaluation.yaml` の必須カテゴリとして評価する。
+- `strict` はrequired checkのWARNを評価失敗とし、`dev` はWARNを許容する。FAILは両modeで評価失敗とする。ただし構造が正しいWARN/FAILは、修正用feedbackへ変換できる。
+- 素材の欠け、境界、隠れ塗り、分割、style、transparencyのwarn/failを `asset_feedback.yaml` へ変換する。
+- evaluationとfeedbackはlayer mapの実IDと照合してから `image-to-live2d-assets` へ返す。
 
 ## Completion
 

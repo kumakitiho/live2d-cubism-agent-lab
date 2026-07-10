@@ -14,4 +14,4 @@
 
 現MVPの `tools.psd_asset_builder` はmanifestから順序付きbuild planを作るstubであり、PSDバイナリを生成しない。build planの `status: plan_only` を保持し、実backendを接続するまで `model_import.psd` を生成済みと記録しない。将来backendを呼ぶ場合も、`ready_to_build: true`、import PNG実在、全part承認、全import制約、権利確認を先に要求する。
 
-将来のbackendは `generated/parts/*.png` を読み、manifestの `order` と `layer_name` を使ってPSDを作る。出力後にレイヤー数、名前、canvas、color modeを再検証する。
+将来のbackendは `generated/parts/*.png` を読み、queueから派生したmanifestの `order` と `layer_name` を使ってPSDを作る。出力後にレイヤー数、名前、canvas、color modeを再検証する。
