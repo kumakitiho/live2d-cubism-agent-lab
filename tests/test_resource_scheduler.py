@@ -3,7 +3,98 @@ from __future__ import annotations
 import threading
 import time
 
-from tools.resource_scheduler import ResourceLimits, ResourceScheduler, ScheduledTask
+import pytest
+
+from tools.resource_scheduler import (
+    ResourceLimits,
+    ResourceScheduler,
+    ScheduledTask,
+    resource_kind_for_device,
+)
+
+
+@pytest.mark.parametrize(
+    ("backend", "device", "expected"),
+    [
+        ("mock", "cpu", "cpu"),
+        ("mock", "cuda", "cpu"),
+        ("sam2", "cpu", "cpu"),
+        ("sam2", "cuda", "gpu"),
+        ("sam2", "cuda:0", "gpu"),
+        ("diffusers", "cpu", "cpu"),
+        ("diffusers", "cuda", "gpu"),
+        ("flux_fill", "mps", "gpu"),
+        ("diffusers", "xpu", "gpu"),
+    ],
+)
+def test_resource_kind_follows_backend_and_device(
+    backend: str,
+    device: str,
+    expected: str,
+) -> None:
+    assert resource_kind_for_device(backend, device) == expected
+
+
+def test_resource_kind_rejects_unknown_device() -> None:
+    with pytest.raises(ValueError, match="unsupported device"):
+        resource_kind_for_device("diffusers", "tpu")
+
+
+def test_cpu_real_backend_ignores_gpu_budget_and_model_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ExplodingLock:
+        def __enter__(self) -> None:
+            raise AssertionError("CPU task must not acquire the model lock")
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    scheduler = ResourceScheduler(ResourceLimits(gpu_memory_budget_mb=8192))
+    monkeypatch.setattr(scheduler, "_model_lock", ExplodingLock())
+    results = scheduler.run(
+        [
+            ScheduledTask(
+                "diffusers-cpu",
+                lambda: "ok",
+                resource=resource_kind_for_device("diffusers", "cpu"),
+                gpu_memory_mb=0,
+            )
+        ]
+    )
+
+    assert results["diffusers-cpu"].status == "completed"
+    assert results["diffusers-cpu"].value == "ok"
+
+
+@pytest.mark.parametrize(
+    ("estimate", "expected_status", "error_fragment"),
+    [
+        (0, "failed", "unknown GPU memory usage"),
+        (4096, "completed", None),
+        (12288, "failed", "exceeds gpu memory budget"),
+    ],
+)
+def test_gpu_real_backend_applies_memory_budget(
+    estimate: int,
+    expected_status: str,
+    error_fragment: str | None,
+) -> None:
+    results = ResourceScheduler(ResourceLimits(gpu_memory_budget_mb=8192)).run(
+        [
+            ScheduledTask(
+                "diffusers-cuda",
+                lambda: "ok",
+                resource=resource_kind_for_device("diffusers", "cuda"),
+                gpu_memory_mb=estimate,
+            )
+        ]
+    )
+
+    result = results["diffusers-cuda"]
+    assert result.status == expected_status
+    if error_fragment is not None:
+        assert error_fragment in str(result.error)
 
 
 def test_independent_cpu_tasks_run_in_parallel() -> None:

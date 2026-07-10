@@ -43,6 +43,7 @@ from tools.resource_scheduler import (
     ResourceLimits,
     ResourceScheduler,
     ScheduledTask,
+    resource_kind_for_device,
 )
 from tools.segmentation_assignment_planner import apply_assignment_plan
 from tools.segmentation_assignment_planner import main as assignment_main
@@ -1048,6 +1049,19 @@ def _has_global_quality_failure(quality_report: Mapping[str, Any]) -> bool:
     return float(score) > float(threshold)
 
 
+def _validated_quality_summary(quality_report: Mapping[str, Any]) -> tuple[str, int]:
+    summary = quality_report.get("summary")
+    if not isinstance(summary, Mapping):
+        raise ValueError("quality result summary is required")
+    quality_result = summary.get("result")
+    if quality_result not in {"pass", "fail"}:
+        raise ValueError("quality summary result must be pass or fail")
+    failed_parts = summary.get("failed_parts")
+    if not isinstance(failed_parts, int) or isinstance(failed_parts, bool) or failed_parts < 0:
+        raise ValueError("quality failed_parts must be a non-negative integer")
+    return quality_result, failed_parts
+
+
 def _execute(args: argparse.Namespace) -> dict[str, Any]:
     base_dir = args.base_dir.resolve()
     queue_path = resolve_inside_base(base_dir, str(args.queue), "canonical queue")
@@ -1162,7 +1176,10 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                 code = scheduler.run_stage(
                     "segmentation",
                     lambda: segmentation_main(segment_args),
-                    resource="cpu" if args.segmentation_backend == "mock" else "gpu",
+                    resource=resource_kind_for_device(
+                        args.segmentation_backend,
+                        args.device,
+                    ),
                     gpu_memory_mb=args.segmentation_gpu_memory_mb,
                 )
                 if code != 0:
@@ -1445,7 +1462,10 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                         ScheduledTask(
                             f"inpaint:{layer_id}",
                             partial(inpainting_main, command),
-                            resource="cpu" if args.inpainting_backend == "mock" else "gpu",
+                            resource=resource_kind_for_device(
+                                args.inpainting_backend,
+                                args.device,
+                            ),
                             gpu_memory_mb=int(
                                 request["backend_config"].get(
                                     "estimated_gpu_memory_mb",
@@ -1698,18 +1718,18 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
             ):
                 raise StageFailure("quality", "global quality evaluation failed")
             quality_report = load_yaml_mapping(quality_path)
-            quality_summary = quality_report.get("summary")
-            if not isinstance(quality_summary, Mapping):
-                raise StageFailure("quality", "quality result summary is required")
-            quality_result = quality_summary.get("result")
-            failed_parts_value = quality_summary.get("failed_parts")
-            if not isinstance(failed_parts_value, int):
-                raise StageFailure("quality", "quality failed_parts must be an integer")
+            quality_result, failed_parts_value = _validated_quality_summary(quality_report)
+            global_visual_difference_exceeds_threshold = _has_global_quality_failure(quality_report)
             quality_artifact_sha256 = _artifact_digests(
                 _quality_artifact_paths(paths),
                 base_dir=base_dir,
             )
-            if quality_result == "fail" and _has_global_quality_failure(quality_report):
+            unattributed_global_failure = (
+                quality_result == "fail"
+                and failed_parts_value == 0
+                and global_visual_difference_exceeds_threshold
+            )
+            if unattributed_global_failure:
                 quality_stage.update(
                     {
                         "status": "waiting_for_review",

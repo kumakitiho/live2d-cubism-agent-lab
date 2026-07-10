@@ -127,6 +127,50 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
+def _install_quality_scenario(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    result: str,
+    failed_parts: int,
+    visual_score: float,
+) -> list[list[str]]:
+    original_quality_main = orchestrator_module.quality_main
+    calls: list[list[str]] = []
+
+    def scenario_quality(argv: list[str] | None = None) -> int:
+        assert argv is not None
+        calls.append(argv)
+        code = original_quality_main(argv)
+        assert code == 0
+        base_dir = Path(argv[argv.index("--base-dir") + 1])
+        output = base_dir / argv[argv.index("--output") + 1]
+        report = _load(output)
+        parts = report["parts"]
+        assert isinstance(parts, list) and parts
+        for part in parts:
+            part["quality_status"] = "pass"
+            part["failed_checks"] = []
+        if failed_parts:
+            assert failed_parts == 1
+            report["thresholds"]["max_edge_continuity_score"] = 0.1
+            parts[0]["metrics"]["edge_continuity_score"] = 0.5
+            parts[0]["quality_status"] = "fail"
+            parts[0]["failed_checks"] = ["edge_continuity_score"]
+        report["thresholds"]["max_visual_reconstruction_difference_score"] = 0.1
+        report["summary"].update(
+            {
+                "result": result,
+                "failed_parts": failed_parts,
+                "visual_reconstruction_difference_score": visual_score,
+            }
+        )
+        write_yaml(output, report, force=True)
+        return 0
+
+    monkeypatch.setattr(orchestrator_module, "quality_main", scenario_quality)
+    return calls
+
+
 def test_dry_run_changes_no_files_and_loads_no_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -559,7 +603,7 @@ def test_unattributed_global_quality_failure_waits_for_manual_review(
                 },
                 "summary": {
                     "result": "fail",
-                    "failed_parts": 1,
+                    "failed_parts": 0,
                     "visual_reconstruction_difference_score": 0.5,
                 },
             },
@@ -591,6 +635,84 @@ def test_unattributed_global_quality_failure_waits_for_manual_review(
     assert failed["outcome"] == "failed"
     assert failed["stages"]["quality"]["status"] == "failed"
     assert queue.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "visual_score",
+    [
+        pytest.param(0.5, id="part-and-global-failure"),
+        pytest.param(0.05, id="part-failure-only"),
+    ],
+)
+def test_attributed_part_failure_reaches_refinement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    visual_score: float,
+) -> None:
+    queue = _fixture(tmp_path)
+    before = queue.read_bytes()
+    quality_calls = _install_quality_scenario(
+        monkeypatch,
+        result="fail",
+        failed_parts=1,
+        visual_score=visual_score,
+    )
+
+    assert orchestrator_main(_arguments(tmp_path, "--auto-approve-mock", "--execute")) == 0
+
+    run_root = tmp_path / "generated/runs/run-001"
+    state = _load(run_root / "run.yaml")
+    plan = _load(run_root / "refinement/plan.yaml")
+    assert len(quality_calls) == 1
+    assert state["outcome"] == "refinement_required"
+    assert state["stages"]["quality"]["status"] == "completed"
+    assert "manual_review_required" not in state["stages"]["quality"]
+    assert state["stages"]["refinement"]["status"] == "completed"
+    assert plan["summary"]["failed_parts"] == 1
+    assert [job["layer_id"] for job in plan["jobs"]] == ["face"]
+    assert queue.read_bytes() == before
+
+
+def test_complete_quality_pass_finishes_without_refinement_jobs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue = _fixture(tmp_path)
+    before = queue.read_bytes()
+    _install_quality_scenario(
+        monkeypatch,
+        result="pass",
+        failed_parts=0,
+        visual_score=0.05,
+    )
+
+    assert orchestrator_main(_arguments(tmp_path, "--auto-approve-mock", "--execute")) == 0
+
+    run_root = tmp_path / "generated/runs/run-001"
+    state = _load(run_root / "run.yaml")
+    plan = _load(run_root / "refinement/plan.yaml")
+    assert state["outcome"] == "completed"
+    assert state["stages"]["quality"]["status"] == "completed"
+    assert state["stages"]["refinement"]["status"] == "completed"
+    assert plan["summary"]["failed_parts"] == 0
+    assert plan["jobs"] == []
+    assert queue.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        {"result": "warn", "failed_parts": 0},
+        {"result": "fail", "failed_parts": True},
+        {"result": "fail", "failed_parts": -1},
+        {"result": "fail", "failed_parts": "1"},
+    ],
+)
+def test_quality_summary_rejects_invalid_result_and_failed_parts(
+    summary: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError):
+        orchestrator_module._validated_quality_summary({"summary": summary})
 
 
 def test_run_schema_and_sample_validate() -> None:

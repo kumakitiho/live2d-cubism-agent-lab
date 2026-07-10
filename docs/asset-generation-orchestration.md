@@ -60,6 +60,8 @@ generated/runs/<run_id>/
 
 `run.yaml` のstage statusは `planned`、`running`、`completed`、`waiting_for_review`、`blocked`、`failed`、`skipped` のいずれかです。stage例外は後続を`blocked`にし、部分成果物が存在しても`completed`にはしません。quality評価自体が完了してpart FAILが見つかった場合は、refinement planにそのpartだけを登録し、run outcomeを`refinement_required`にします。global failureをpartへ帰属できない場合はrunをfailedにせず、qualityを`waiting_for_review`、outcomeを`manual_review_required`として停止します。
 
+`manual_review_required` になったrunは、`--resume` だけでは先へ進みません。quality reportとdifference imageを確認し、mask、part、queueなどを修正したうえで、新しいrun IDを使って再実行してください。現時点では同じrunを承認して継続するオプションはありません。
+
 ## Inpainting model sizeとquality threshold
 
 - model size既定値はbackendの`recommended_size`です。mockは64×64、Diffusersは512×512、FLUX Fillは1024×1024です。
@@ -76,5 +78,7 @@ generated/runs/<run_id>/
 - inpainting: `mock`、`diffusers`、`flux_fill`
 
 availabilityは理由付きで取得でき、registry取得だけではmodelをloadしません。`ResourceScheduler` はdependencyのないCPU taskを並列化し、GPU worker上限とglobal model exclusive lockを適用します。GPU stageは既定で1 workerのため、segmentation modelとinpainting modelを同時常駐させません。
+
+`--device cpu` の実backendはCPU taskとして扱い、GPU memory budget、GPU worker上限、model exclusive lockの対象外です。mockはdevice指定にかかわらず常にCPU taskです。`cuda` / `cuda:N` / `mps` / `xpu` / `xpu:N` の実backendはGPU taskとして扱います。
 
 `--segmentation-gpu-memory-mb` と `--inpainting-gpu-memory-mb` はstageごとの推定GPU memoryをschedulerへ渡します。inpainting値はrequestの `backend_config.estimated_gpu_memory_mb` にも記録されます。`gpu_memory_budget_mb: 0` はbudget検査無効なので推定値不明（0）でも実行できます。正のbudgetを指定した場合はfail-closedとし、推定値0のGPU taskを拒否します。実model実験では観測値またはmodel資料に基づく推定値を明示してください。

@@ -12,6 +12,23 @@ ResourceKind = Literal["cpu", "gpu"]
 TaskStatus = Literal["completed", "failed", "blocked"]
 
 
+def resource_kind_for_device(backend_name: str, device: str) -> ResourceKind:
+    if backend_name == "mock":
+        return "cpu"
+    normalized = device.strip().lower()
+    if normalized == "cpu":
+        return "cpu"
+    if (
+        normalized == "cuda"
+        or normalized.startswith("cuda:")
+        or normalized == "mps"
+        or normalized == "xpu"
+        or normalized.startswith("xpu:")
+    ):
+        return "gpu"
+    raise ValueError(f"unsupported device for resource scheduling: {device}")
+
+
 @dataclass(frozen=True)
 class ResourceLimits:
     max_cpu_workers: int = 4
@@ -197,8 +214,10 @@ class ResourceScheduler:
 
 
 __all__ = [
+    "ResourceKind",
     "ResourceLimits",
     "ResourceScheduler",
     "ScheduledTask",
     "TaskResult",
+    "resource_kind_for_device",
 ]
