@@ -1,0 +1,49 @@
+schema_version: 1
+timestamp: '2026-01-01T00:00:00+00:00'
+platform: win32
+windows_version: Windows-11
+screen:
+  width: 1920
+  height: 1080
+  dpi_scale: 1.0
+  monitors:
+    - {index: 0, width: 1920, height: 1080, primary: true}
+cubism:
+  detected: true
+  executable: C:\Program Files\Live2D Cubism 5.0\CubismEditor5.exe
+  executable_name: CubismEditor5.exe
+  version: '5'
+  process_id: 4242
+  window_title: Live2D Cubism Editor 5.0
+  language_guess: Japanese
+  workspace_guess: Modeling
+  foreground: true
+  window_rect: [0, 0, 1920, 1080]
+external_api:
+  reachable: true
+  endpoint: ws://127.0.0.1:22033
+  approved: true
+  current_edit_mode: Modeling
+  current_document_uid: document-1
+  current_model_uid: model-1
+  error: null
+uia:
+  backend: uia
+  top_window_detected: true
+  dialog_labels: []
+  control_type_counts: {Button: 8, MenuItem: 12, Window: 1}
+  known_controls: [ファイル, 編集, 保存]
+  missing_controls: []
+  profile_match: cubism-5-ja
+  profile_candidates: [cubism-5-ja]
+  profile_reasons: [matched 3 language marker(s); score=3]
+  snapshot_file: outputs/cubism-control-tree.json
+shortcuts:
+  available: [Ctrl+O, Ctrl+A, Ctrl+Shift+A, Ctrl+Z]
+  tested: false
+  results: []
+diagnosis:
+  status: ready
+  blockers: []
+  warnings: []
+  recommended_next_action: Review the report before an approved --execute smoke test.

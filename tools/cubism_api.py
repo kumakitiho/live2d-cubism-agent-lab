@@ -62,7 +62,8 @@ class ConnectionOptions:
 
     @property
     def url(self) -> str:
-        return f"ws://{self.host}:{self.port}"
+        host = f"[{self.host}]" if ":" in self.host and not self.host.startswith("[") else self.host
+        return f"ws://{host}:{self.port}"
 
 
 class RequestTransport(Protocol):

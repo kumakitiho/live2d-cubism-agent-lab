@@ -1,0 +1,35 @@
+profile_id: cubism-5-ja
+language: Japanese
+version_patterns:
+  - '(?:CubismEditor|Cubism Editor)[ _-]*(?:v(?:ersion)?[ _-]*)?5(?:\.[0-9]+)?(?=[^0-9]|$)'
+window_patterns:
+  - '.*(?:Live2D Cubism|Cubism Editor|Cubism).*$'
+language_markers:
+  - '^ファイル$'
+  - '^編集$'
+  - '^モデリング$'
+  - '^保存$'
+dialog_patterns:
+  open_file: ['^開く$']
+  model_settings: ['.*モデル設定.*']
+  auto_mesh: ['.*メッシュの自動生成.*']
+  save_file: ['^名前を付けて保存$']
+model_open_modes:
+  create_new_model: ['^PSDファイルから新規モデルを作成.*$']
+  create_new_model_legacy_blend: ['^.*5\.2.*(?:ブレンド|blend).*$']
+auto_mesh:
+  dialog_patterns: ['.*メッシュの自動生成.*']
+  preset_combobox:
+    control_type: ComboBox
+    cardinality: exactly_one
+  presets:
+    Standard: ['^標準$']
+    DeformationSmall: ['^変形度合い[（(]小[）)]$']
+    DeformationLarge: ['^変形度合い[（(]大[）)]$']
+  alpha_edit:
+    control_type: Edit
+    patterns: ['.*透明とみなすアルファ値.*']
+  confirm_button:
+    control_type: Button
+    patterns: ['^(?:OK|ＯＫ)$']
+save_control_patterns: ['^保存$', '^名前を付けて保存$']

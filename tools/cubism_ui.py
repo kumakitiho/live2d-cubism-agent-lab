@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from tools.cubism_ui_profiles import CubismUIProfile, get_profile
+
 DEFAULT_WINDOW_TITLE = r".*(?:Live2D Cubism|Cubism Editor|Cubism).*"
 DEFAULT_PROCESS_NAME = r"^CubismEditor[A-Za-z0-9_-]*\.exe$"
 OPEN_MODES = {"create_new_model", "create_new_model_legacy_blend"}
@@ -37,6 +39,8 @@ PRESET_LABELS: dict[str, tuple[str, ...]] = {
     "DeformationSmall": ("Deformation (small)", "変形度合い（小）", "変形度合い(小)"),
     "DeformationLarge": ("Deformation (large)", "変形度合い（大）", "変形度合い(大)"),
 }
+
+AUTO_MESH_CONFIRM_PATTERNS = (r"^OK$", r"^ＯＫ$")
 
 
 class UIAutomationError(RuntimeError):
@@ -138,7 +142,7 @@ def build_auto_mesh_actions(
         UIAction("hotkey", {"keys": ["ctrl", "shift", "a"]}),
         UIAction("wait_for_dialog", {"kind": "auto_mesh", "timeout": dialog_timeout}),
         UIAction("configure_auto_mesh", {"preset": preset, "alpha": alpha}),
-        UIAction("assert_dialog_present", {"kind": "auto_mesh", "timeout": 2.0}),
+        UIAction("wait_for_dialog_closed", {"kind": "auto_mesh", "timeout": dialog_timeout}),
         UIAction("wait_after_operation", {"seconds": 1.0}),
         _screenshot_action(screenshot),
     ]
@@ -195,6 +199,8 @@ def execute_actions(
     backend: UIBackend | None = None,
     window_title: str = DEFAULT_WINDOW_TITLE,
     process_name: str = DEFAULT_PROCESS_NAME,
+    process_id: int | None = None,
+    profile_id: str | None = None,
     failure_screenshot: Path | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
@@ -210,6 +216,8 @@ def execute_actions(
     active_backend = backend or WindowsCubismBackend(
         window_title=window_title,
         process_name=process_name,
+        process_id=process_id,
+        profile_id=profile_id,
     )
     try:
         for action in actions:
@@ -221,6 +229,7 @@ def execute_actions(
     except Exception as exc:
         result["status"] = "error"
         result["error"] = f"{type(exc).__name__}: {exc}"
+        result["failed_action"] = action.to_dict()
         if failure_screenshot is not None:
             try:
                 active_backend.perform(_screenshot_action(failure_screenshot))
@@ -260,6 +269,8 @@ class WindowsCubismBackend:
         *,
         window_title: str = DEFAULT_WINDOW_TITLE,
         process_name: str = DEFAULT_PROCESS_NAME,
+        process_id: int | None = None,
+        profile_id: str | None = None,
     ) -> None:
         if platform.system() != "Windows":
             raise UIAutomationError("real Cubism UI execution is supported only on Windows")
@@ -277,7 +288,9 @@ class WindowsCubismBackend:
         self._desktop = Desktop(backend="uia")
         self._window_title = re.compile(window_title, re.IGNORECASE)
         self._process_name = re.compile(process_name, re.IGNORECASE)
-        self._cubism_pid: int | None = None
+        self._fixed_process_allowlist = re.compile(DEFAULT_PROCESS_NAME, re.IGNORECASE)
+        self._cubism_pid = process_id
+        self._profile: CubismUIProfile | None = get_profile(profile_id) if profile_id else None
         self._active_dialogs: dict[str, Any] = {}
         self._pyautogui.PAUSE = 0.15
 
@@ -316,7 +329,9 @@ class WindowsCubismBackend:
                         executable = self._psutil.Process(window_pid).name()
                     except self._psutil.Error:
                         continue
-                    if not self._process_name.search(executable):
+                    if not self._fixed_process_allowlist.fullmatch(executable):
+                        continue
+                    if not self._process_name.fullmatch(executable):
                         continue
                 if pattern.search(self._control_text(window)):
                     return window
@@ -324,7 +339,11 @@ class WindowsCubismBackend:
         raise UIAutomationError(f"window not found: {pattern.pattern}")
 
     def _dialog_pattern(self, kind: str) -> re.Pattern[str]:
-        patterns = DIALOG_PATTERNS.get(kind)
+        patterns = (
+            self._profile.dialog_patterns.get(kind)
+            if self._profile is not None
+            else DIALOG_PATTERNS.get(kind)
+        )
         if patterns is None:
             raise UIAutomationError(f"unknown dialog kind: {kind}")
         return re.compile("|".join(f"(?:{item})" for item in patterns), re.IGNORECASE)
@@ -348,14 +367,58 @@ class WindowsCubismBackend:
         patterns: tuple[str, ...],
     ) -> Any:
         compiled = [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
+        matches: list[Any] = []
+        seen: set[int] = set()
         for control_type in control_types:
             for control in dialog.descendants(control_type=control_type):
                 text = self._control_text(control)
-                if any(pattern.search(text) for pattern in compiled):
-                    return control
-        raise UIAutomationError(
-            f"named control not found; expected patterns: {', '.join(patterns)}"
-        )
+                try:
+                    enabled = bool(control.is_enabled())
+                    visible = bool(control.is_visible())
+                except Exception:
+                    enabled = False
+                    visible = False
+                if (
+                    enabled
+                    and visible
+                    and any(pattern.search(text) for pattern in compiled)
+                    and id(control) not in seen
+                ):
+                    matches.append(control)
+                    seen.add(id(control))
+        if not matches:
+            raise UIAutomationError(
+                f"named control not found; expected patterns: {', '.join(patterns)}"
+            )
+        if len(matches) != 1:
+            raise UIAutomationError(
+                "ambiguous named control; expected exactly one match for patterns: "
+                f"{', '.join(patterns)}"
+            )
+        return matches[0]
+
+    def _ensure_cubism_foreground(self) -> None:
+        if self._cubism_pid is None:
+            raise UIAutomationError("Cubism process has not been identified")
+        foreground_pids: list[int] = []
+        for window in self._desktop.windows():
+            try:
+                if window.has_focus():
+                    foreground_pids.append(int(window.element_info.process_id))
+            except Exception:
+                continue
+        if foreground_pids != [self._cubism_pid]:
+            raise UIAutomationError(
+                "Cubism is not the unique foreground process; global shortcut was not sent"
+            )
+        try:
+            executable = self._psutil.Process(self._cubism_pid).name()
+        except self._psutil.Error as exc:
+            raise UIAutomationError("Cubism foreground process is unavailable") from exc
+        if not self._fixed_process_allowlist.fullmatch(executable):
+            raise UIAutomationError(
+                "foreground process executable is not allowlisted Cubism Editor"
+            )
 
     @staticmethod
     def _invoke_control(control: Any) -> None:
@@ -372,7 +435,11 @@ class WindowsCubismBackend:
 
     def _choose_model_open_mode(self, mode: str) -> None:
         dialog = self._active_dialogs.get("model_settings") or self._find_dialog("model_settings")
-        patterns = MODEL_MODE_PATTERNS.get(mode)
+        patterns = (
+            self._profile.model_open_modes.get(mode)
+            if self._profile is not None
+            else MODEL_MODE_PATTERNS.get(mode)
+        )
         if patterns is None:
             raise UIAutomationError(f"unsupported model open mode: {mode}")
         option = self._find_matching_control(
@@ -391,12 +458,22 @@ class WindowsCubismBackend:
     def _configure_auto_mesh(self, preset: str, alpha: int) -> None:
         dialog = self._active_dialogs.get("auto_mesh") or self._find_dialog("auto_mesh")
         combo_boxes = dialog.descendants(control_type="ComboBox")
+        if not combo_boxes:
+            raise UIAutomationError(
+                "auto-mesh preset combobox is not exposed through UIA"
+            )
         if len(combo_boxes) != 1:
             raise UIAutomationError(
-                "auto-mesh dialog must expose exactly one preset combobox through UIA"
+                "auto-mesh dialog exposes an ambiguous number of preset combobox controls"
             )
 
-        labels = PRESET_LABELS[preset]
+        labels = (
+            self._profile.preset_labels.get(preset)
+            if self._profile is not None
+            else PRESET_LABELS.get(preset)
+        )
+        if labels is None:
+            raise UIAutomationError(f"auto-mesh preset is not in the active profile: {preset}")
         combo = combo_boxes[0]
         selected = False
         for label in labels:
@@ -413,15 +490,27 @@ class WindowsCubismBackend:
             dialog,
             control_types=("Edit",),
             patterns=(
-                r".*Alpha value to be considered transparent.*",
-                r".*透明とみなすアルファ値.*",
+                self._profile.alpha_edit_patterns
+                if self._profile is not None
+                else (
+                    r".*Alpha value to be considered transparent.*",
+                    r".*透明とみなすアルファ値.*",
+                )
             ),
         )
         if not hasattr(alpha_control, "set_edit_text"):
             raise UIAutomationError("alpha control does not support text input")
         alpha_control.set_edit_text(str(alpha))
-        alpha_control.set_focus()
-        self._pyautogui.press("enter")
+        confirm = self._find_matching_control(
+            dialog,
+            control_types=("Button",),
+            patterns=(
+                self._profile.confirm_button_patterns
+                if self._profile is not None
+                else AUTO_MESH_CONFIRM_PATTERNS
+            ),
+        )
+        self._invoke_control(confirm)
 
     def perform(self, action: UIAction) -> None:
         name = action.name
@@ -430,6 +519,7 @@ class WindowsCubismBackend:
             window = self._find_top_window(
                 self._window_title,
                 10.0,
+                process_id=self._cubism_pid,
                 require_process_match=True,
             )
             self._cubism_pid = int(window.element_info.process_id)
@@ -447,6 +537,7 @@ class WindowsCubismBackend:
             key_tuple = tuple(str(key).lower() for key in keys or [])
             if key_tuple not in allowed:
                 raise UIAutomationError(f"hotkey is not allowlisted: {key_tuple}")
+            self._ensure_cubism_foreground()
             self._pyautogui.hotkey(*key_tuple)
             return
         if name == "wait_for_dialog":
@@ -472,6 +563,7 @@ class WindowsCubismBackend:
             key = str(args["key"]).lower()
             if key not in {"enter", "escape"}:
                 raise UIAutomationError(f"key is not allowlisted: {key}")
+            self._ensure_cubism_foreground()
             self._pyautogui.press(key)
             return
         if name == "choose_model_open_mode":
@@ -519,7 +611,15 @@ class WindowsCubismBackend:
         if name == "capture_screenshot":
             path = Path(str(args["path"]))
             path.parent.mkdir(parents=True, exist_ok=True)
-            self._pyautogui.screenshot(str(path))
+            if self._cubism_pid is None:
+                raise UIAutomationError("Cubism process has not been identified")
+            window = self._find_top_window(
+                self._window_title,
+                2.0,
+                process_id=self._cubism_pid,
+                require_process_match=True,
+            )
+            window.capture_as_image().save(path)
             return
         raise UIAutomationError(f"unknown backend action: {name}")
 
@@ -532,6 +632,8 @@ def _add_execute_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--window-title", default=DEFAULT_WINDOW_TITLE)
     parser.add_argument("--process-name", default=DEFAULT_PROCESS_NAME)
+    parser.add_argument("--process-id", type=int)
+    parser.add_argument("--profile")
     parser.add_argument(
         "--failure-screenshot",
         type=Path,
@@ -613,6 +715,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             execute=args.execute,
             window_title=args.window_title,
             process_name=args.process_name,
+            process_id=args.process_id,
+            profile_id=args.profile,
             failure_screenshot=args.failure_screenshot,
         )
     except (FileNotFoundError, ValueError, UIAutomationError) as exc:

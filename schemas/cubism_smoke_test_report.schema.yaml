@@ -1,0 +1,100 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Cubism staged smoke test report
+type: object
+required:
+  - schema_version
+  - mode
+  - status
+  - input_psd
+  - preset
+  - alpha
+  - stages
+  - visual_review_required
+properties:
+  schema_version: {const: 1}
+  timestamp: {type: string, minLength: 1}
+  mode: {enum: [dry-run, execute]}
+  status: {enum: [planned, running, completed, failed, waiting_for_user]}
+  input_psd: {type: string, minLength: 1}
+  preset: {type: string, minLength: 1}
+  alpha: {type: integer, minimum: 0, maximum: 255}
+  output: {type: string}
+  process_id: {type: [integer, 'null'], minimum: 1}
+  profile_id: {type: [string, 'null']}
+  external_connections: {type: boolean}
+  files_written: {type: boolean}
+  stages:
+    type: object
+    additionalProperties: false
+    required:
+      - preflight
+      - api_connection
+      - initial_snapshot
+      - psd_import
+      - import_verification
+      - auto_mesh
+      - visual_capture
+      - undo
+      - final_snapshot
+    properties:
+      preflight: {$ref: '#/$defs/stage'}
+      api_connection: {$ref: '#/$defs/stage'}
+      initial_snapshot: {$ref: '#/$defs/stage'}
+      psd_import: {$ref: '#/$defs/stage'}
+      import_verification: {$ref: '#/$defs/stage'}
+      auto_mesh: {$ref: '#/$defs/stage'}
+      visual_capture: {$ref: '#/$defs/stage'}
+      undo: {$ref: '#/$defs/stage'}
+      final_snapshot: {$ref: '#/$defs/stage'}
+  evidence:
+    type: object
+    additionalProperties: false
+    required: [import_screenshot, auto_mesh_screenshot, undo_screenshot, failure_screenshot]
+    properties:
+      import_screenshot: {$ref: '#/$defs/relative_path'}
+      auto_mesh_screenshot: {$ref: '#/$defs/relative_path'}
+      undo_screenshot: {$ref: '#/$defs/relative_path'}
+      failure_screenshot:
+        oneOf:
+          - {type: 'null'}
+          - {$ref: '#/$defs/relative_path'}
+  visual_review_required: {const: true}
+additionalProperties: false
+$defs:
+  relative_path:
+    type: string
+    minLength: 1
+    not: {pattern: '^(?:[A-Za-z]:[\\/]|/|\\\\)'}
+  stage:
+    type: object
+    required: [status]
+    properties:
+      status:
+        enum: [planned, running, completed, failed, blocked, waiting_for_user, skipped]
+      details: {type: object}
+      failure: {$ref: '#/$defs/failure_code'}
+      error: {type: string}
+      blocked_by: {type: string}
+      screenshot_error: {type: string}
+      macro_result: {type: object}
+      recovery: {type: object}
+    additionalProperties: false
+  failure_code:
+    enum:
+      - cubism_not_found
+      - wrong_process
+      - window_not_found
+      - unsupported_version
+      - unsupported_language
+      - external_api_unreachable
+      - external_api_not_approved
+      - wrong_edit_mode
+      - dialog_not_found
+      - control_not_exposed_by_uia
+      - ambiguous_control
+      - shortcut_failed
+      - import_verification_failed
+      - auto_mesh_verification_failed
+      - undo_failed
+      - save_as_dialog_opened
+      - timeout

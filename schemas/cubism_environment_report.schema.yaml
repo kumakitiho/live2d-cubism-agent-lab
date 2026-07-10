@@ -1,0 +1,147 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Cubism environment diagnostics report
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - timestamp
+  - platform
+  - windows_version
+  - screen
+  - cubism
+  - external_api
+  - uia
+  - shortcuts
+  - diagnosis
+properties:
+  schema_version: {const: 1}
+  timestamp: {type: string, minLength: 1}
+  platform: {type: string, minLength: 1}
+  windows_version: {type: [string, 'null']}
+  screen:
+    type: object
+    additionalProperties: false
+    required: [width, height, dpi_scale, monitors]
+    properties:
+      width: {type: [integer, 'null'], minimum: 1}
+      height: {type: [integer, 'null'], minimum: 1}
+      dpi_scale: {type: [number, 'null'], exclusiveMinimum: 0}
+      monitors: {type: array, items: {type: object}}
+  cubism:
+    type: object
+    additionalProperties: false
+    required:
+      - detected
+      - executable
+      - executable_name
+      - version
+      - process_id
+      - window_title
+      - language_guess
+      - workspace_guess
+      - foreground
+      - window_rect
+    properties:
+      detected: {type: boolean}
+      executable: {type: [string, 'null']}
+      executable_name: {type: [string, 'null']}
+      version: {type: [string, 'null']}
+      process_id: {type: [integer, 'null'], minimum: 1}
+      window_title: {type: [string, 'null']}
+      language_guess: {type: [string, 'null']}
+      workspace_guess: {type: [string, 'null']}
+      foreground: {type: [boolean, 'null']}
+      window_rect:
+        oneOf:
+          - {type: 'null'}
+          - {type: array, minItems: 4, maxItems: 4, items: {type: integer}}
+  external_api:
+    type: object
+    additionalProperties: false
+    required:
+      - reachable
+      - endpoint
+      - approved
+      - current_edit_mode
+      - current_document_uid
+      - current_model_uid
+      - error
+    properties:
+      reachable: {type: boolean}
+      endpoint: {type: string, pattern: '^ws://'}
+      approved: {type: [boolean, 'null']}
+      current_edit_mode: {type: [string, 'null']}
+      current_document_uid: {type: [string, 'null']}
+      current_model_uid: {type: [string, 'null']}
+      error: {type: [string, 'null']}
+  uia:
+    type: object
+    additionalProperties: false
+    required:
+      - backend
+      - top_window_detected
+      - dialog_labels
+      - control_type_counts
+      - known_controls
+      - missing_controls
+      - profile_match
+      - profile_candidates
+      - profile_reasons
+      - snapshot_file
+    properties:
+      backend: {const: uia}
+      top_window_detected: {type: boolean}
+      dialog_labels: {type: array, items: {type: string}}
+      control_type_counts:
+        type: object
+        additionalProperties: {type: integer, minimum: 0}
+      known_controls: {type: array, items: {type: string}}
+      missing_controls: {type: array, items: {type: string}}
+      profile_match: {type: [string, 'null']}
+      profile_candidates: {type: array, items: {type: string}}
+      profile_reasons: {type: array, items: {type: string}}
+      snapshot_file:
+        oneOf:
+          - {type: 'null'}
+          - {$ref: '#/$defs/relative_path'}
+  shortcuts:
+    type: object
+    additionalProperties: false
+    required: [available, tested, results]
+    properties:
+      available: {type: array, items: {type: string}}
+      tested: {type: boolean}
+      results: {type: array}
+  diagnosis:
+    type: object
+    additionalProperties: false
+    required: [status, blockers, warnings, recommended_next_action]
+    properties:
+      status: {enum: [ready, blocked, warning]}
+      blockers: {type: array, items: {$ref: '#/$defs/failure_code'}}
+      warnings: {type: array, items: {type: string}}
+      recommended_next_action: {type: string, minLength: 1}
+$defs:
+  relative_path:
+    type: string
+    minLength: 1
+    not: {pattern: '^(?:[A-Za-z]:[\\/]|/|\\\\)'}
+  failure_code:
+    enum:
+      - cubism_not_found
+      - wrong_process
+      - window_not_found
+      - unsupported_version
+      - unsupported_language
+      - external_api_unreachable
+      - external_api_not_approved
+      - wrong_edit_mode
+      - dialog_not_found
+      - control_not_exposed_by_uia
+      - ambiguous_control
+      - shortcut_failed
+      - import_verification_failed
+      - auto_mesh_verification_failed
+      - undo_failed
+      - save_as_dialog_opened
+      - timeout

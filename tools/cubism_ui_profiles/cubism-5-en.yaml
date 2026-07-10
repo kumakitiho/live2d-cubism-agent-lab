@@ -1,0 +1,35 @@
+profile_id: cubism-5-en
+language: English
+version_patterns:
+  - '(?:CubismEditor|Cubism Editor)[ _-]*(?:v(?:ersion)?[ _-]*)?5(?:\.[0-9]+)?(?=[^0-9]|$)'
+window_patterns:
+  - '.*(?:Live2D Cubism|Cubism Editor|Cubism).*$'
+language_markers:
+  - '^File$'
+  - '^Edit$'
+  - '^Modeling$'
+  - '^Save(?: As)?$'
+dialog_patterns:
+  open_file: ['^Open$']
+  model_settings: ['.*Model Settings.*']
+  auto_mesh: ['.*Automatic Mesh generator.*']
+  save_file: ['^Save As$']
+model_open_modes:
+  create_new_model: ['^Create new model from (?:the )?(?:imported )?PSD(?: file)?\.?$']
+  create_new_model_legacy_blend: ['^Create new model.*5\.2.*$']
+auto_mesh:
+  dialog_patterns: ['.*Automatic Mesh generator.*']
+  preset_combobox:
+    control_type: ComboBox
+    cardinality: exactly_one
+  presets:
+    Standard: ['^Standard$']
+    DeformationSmall: ['^Deformation \(small\)$']
+    DeformationLarge: ['^Deformation \(large\)$']
+  alpha_edit:
+    control_type: Edit
+    patterns: ['.*Alpha value to be considered transparent.*']
+  confirm_button:
+    control_type: Button
+    patterns: ['^OK$']
+save_control_patterns: ['^Save$', '^Save As$']
