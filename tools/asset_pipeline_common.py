@@ -24,7 +24,10 @@ QUALITY_CHECKS = {
     "transparent_hole_px",
     "overlap_deficit_px",
     "preserve_region_difference_score",
-    "allowed_change_region_difference_score",
+    "edge_extension_difference_score",
+    "inpaint_outside_difference_score",
+    "edge_continuity_score",
+    "boundary_color_difference_score",
     "visual_reconstruction_difference_score",
 }
 
@@ -474,7 +477,10 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
     )
     score_threshold_keys = (
         "max_preserve_region_difference_score",
-        "max_allowed_change_region_difference_score",
+        "max_edge_extension_difference_score",
+        "max_inpaint_outside_difference_score",
+        "max_edge_continuity_score",
+        "max_boundary_color_difference_score",
         "max_visual_reconstruction_difference_score",
     )
     threshold_values: dict[str, float] = {}
@@ -519,6 +525,13 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
                     "must equal 0",
                 )
             )
+        if threshold_values.get("max_inpaint_outside_difference_score") != 0.0:
+            issues.append(
+                ArtifactIssue(
+                    "thresholds.max_inpaint_outside_difference_score",
+                    "must equal 0",
+                )
+            )
 
     parts = data.get("parts")
     if not isinstance(parts, list):
@@ -529,13 +542,15 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
         "transparent_hole_px": "max_transparent_hole_px",
         "overlap_deficit_px": "max_overlap_deficit_px",
         "preserve_region_difference_score": "max_preserve_region_difference_score",
-        "allowed_change_region_difference_score": (
-            "max_allowed_change_region_difference_score"
-        ),
+        "edge_extension_difference_score": "max_edge_extension_difference_score",
+        "inpaint_outside_difference_score": "max_inpaint_outside_difference_score",
+        "edge_continuity_score": "max_edge_continuity_score",
+        "boundary_color_difference_score": "max_boundary_color_difference_score",
         "visual_reconstruction_difference_score": (
             "max_visual_reconstruction_difference_score"
         ),
     }
+    informational_metrics = {"inpaint_region_source_difference_score"}
     seen: set[str] = set()
     failed_count = 0
     for index, part in enumerate(parts):
@@ -595,7 +610,8 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
         if not isinstance(metrics, Mapping):
             issues.append(ArtifactIssue(f"{base}.metrics", "must be a mapping"))
         else:
-            unexpected_metrics = set(metrics) - set(metric_thresholds)
+            expected_metrics = set(metric_thresholds) | informational_metrics
+            unexpected_metrics = set(metrics) - expected_metrics
             if unexpected_metrics:
                 issues.append(
                     ArtifactIssue(
@@ -603,7 +619,7 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
                         f"contains unsupported fields: {sorted(unexpected_metrics)}",
                     )
                 )
-            for key in metric_thresholds:
+            for key in expected_metrics:
                 value = metrics.get(key)
                 valid_score = key.endswith("_score") and isinstance(value, (int, float)) and (
                     not isinstance(value, bool) and 0 <= float(value) <= 1

@@ -12,6 +12,10 @@ source画素を保持する優先順位は `extract > extract_and_edge_repair > 
 
 protect領域の差分は通常の前進transitionで修復せず、sourceから `extract` をやり直す。生成inpaintingやredrawでpreserve違反を隠さない。
 
+edge extensionのsource差分は小さい設定可能閾値で判定し、失敗時は `extract_and_edge_repair` を再実行する。inpaint領域のsource差分は、sourceに前面物が描かれているためgateに使わない。inpaint mask外の変更は0を要求し、失敗時は同じinpaint方式のmask compositingを修正する。inpaint境界のalpha/RGB不連続は候補の再生成またはrankingへ戻す。
+
+同じpartに複数failureがあるときは、preserve違反、inpaint mask外変更、target必須coverageの透明穴、white halo/edge-extension/coverage、境界不連続、視覚再合成差分の順にrefinementを選ぶ。透明穴はoverlap不足も同時に発生するため、修復できないedge repairより `transparency_fill` を優先する。white haloは情報量の少ない視覚差分よりsource-preserving edge repairを優先する。1回のplanで隠れた低優先failureは、再評価後の次planで処理する。
+
 non-zero `overlap_margin_px` はtarget maskの自動膨張を意味しない。desired coverageはbinary target maskと明示的な `edge_extension_mask` の和集合とする。`inpaint_mask` は生成inpaintingが変更できる隠れ領域であり、overlap coverageへ流用しない。extensionが空なら初回extractをoverlap不足だけでfailにしない。plannerはnon-zero overlapの可視partを `extract_and_edge_repair` から開始する。
 
 `draw_order` は背面から前面への順序で、小さい値を先に、大きい値を上へ合成する。hidden fillは対応するvisible baseより小さく、back hairはface・eyes・front hairより小さくする。

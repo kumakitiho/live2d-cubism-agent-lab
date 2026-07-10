@@ -51,14 +51,22 @@ properties:
             - transparent_hole_px
             - overlap_deficit_px
             - preserve_region_difference_score
-            - allowed_change_region_difference_score
+            - edge_extension_difference_score
+            - inpaint_region_source_difference_score
+            - inpaint_outside_difference_score
+            - edge_continuity_score
+            - boundary_color_difference_score
             - visual_reconstruction_difference_score
           properties:
             white_halo_px: {type: integer, minimum: 0}
             transparent_hole_px: {type: integer, minimum: 0}
             overlap_deficit_px: {type: integer, minimum: 0}
             preserve_region_difference_score: {type: number, minimum: 0, maximum: 1}
-            allowed_change_region_difference_score: {type: number, minimum: 0, maximum: 1}
+            edge_extension_difference_score: {type: number, minimum: 0, maximum: 1}
+            inpaint_region_source_difference_score: {type: number, minimum: 0, maximum: 1}
+            inpaint_outside_difference_score: {type: number, minimum: 0, maximum: 1}
+            edge_continuity_score: {type: number, minimum: 0, maximum: 1}
+            boundary_color_difference_score: {type: number, minimum: 0, maximum: 1}
             visual_reconstruction_difference_score: {type: number, minimum: 0, maximum: 1}
         failed_checks:
           type: array
@@ -69,7 +77,10 @@ properties:
               - transparent_hole_px
               - overlap_deficit_px
               - preserve_region_difference_score
-              - allowed_change_region_difference_score
+              - edge_extension_difference_score
+              - inpaint_outside_difference_score
+              - edge_continuity_score
+              - boundary_color_difference_score
               - visual_reconstruction_difference_score
   thresholds:
     type: object
@@ -79,14 +90,20 @@ properties:
       - max_transparent_hole_px
       - max_overlap_deficit_px
       - max_preserve_region_difference_score
-      - max_allowed_change_region_difference_score
+      - max_edge_extension_difference_score
+      - max_inpaint_outside_difference_score
+      - max_edge_continuity_score
+      - max_boundary_color_difference_score
       - max_visual_reconstruction_difference_score
     properties:
       max_white_halo_px: {type: integer, minimum: 0}
       max_transparent_hole_px: {type: integer, minimum: 0}
       max_overlap_deficit_px: {type: integer, minimum: 0}
       max_preserve_region_difference_score: {const: 0}
-      max_allowed_change_region_difference_score: {type: number, minimum: 0, maximum: 1}
+      max_edge_extension_difference_score: {type: number, minimum: 0, maximum: 1}
+      max_inpaint_outside_difference_score: {const: 0}
+      max_edge_continuity_score: {type: number, minimum: 0, maximum: 1}
+      max_boundary_color_difference_score: {type: number, minimum: 0, maximum: 1}
       max_visual_reconstruction_difference_score: {type: number, minimum: 0, maximum: 1}
   summary:
     type: object

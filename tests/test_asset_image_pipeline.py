@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from PIL import Image
+from PIL import Image, ImageChops
 
 from tools.artifact_validation import load_yaml_mapping
 from tools.asset_manifest_validator import validate_asset_manifest
@@ -149,15 +149,30 @@ def test_foreground_reconstruction_mask_detects_opaque_stray_pixels() -> None:
     assert difference_score(source, reconstructed, foreground) > 0.0
 
 
-def test_allowed_change_region_is_separate_from_preserve_region() -> None:
-    source = Image.new("RGBA", (3, 1), (0, 0, 0, 0))
-    source.putpixel((1, 0), (20, 40, 60, 255))
-    part = source.copy()
-    part.putpixel((2, 0), (80, 120, 160, 255))
-    target = _mask(source.size, {(1, 0)})
-    protect = target.copy()
-    edge_extension = Image.new("L", source.size, 0)
-    inpaint = _mask(source.size, {(2, 0)})
+def _occluded_forehead_fixture() -> tuple[
+    Image.Image,
+    Image.Image,
+    Image.Image,
+    Image.Image,
+    Image.Image,
+    Image.Image,
+]:
+    size = (5, 3)
+    skin = (210, 160, 130, 255)
+    source = Image.new("RGBA", size, skin)
+    source.putpixel((2, 1), (35, 20, 15, 255))  # sourceでは前面の髪
+    part = Image.new("RGBA", size, skin)  # 生成partでは隠れていた額
+    inpaint = _mask(size, {(2, 1)})
+    protect = ImageChops.subtract(Image.new("L", size, 255), inpaint)
+    target = Image.new("L", size, 255)
+    edge_extension = Image.new("L", size, 0)
+    return source, part, target, protect, edge_extension, inpaint
+
+
+def test_inpaint_source_difference_is_informational_only() -> None:
+    source, part, target, protect, edge_extension, inpaint = (
+        _occluded_forehead_fixture()
+    )
 
     result = evaluate_part(
         part,
@@ -168,15 +183,21 @@ def test_allowed_change_region_is_separate_from_preserve_region() -> None:
         edge_extension_mask=edge_extension,
         inpaint_mask=inpaint,
         reconstructed=source,
-        thresholds={"max_allowed_change_region_difference_score": 1.0},
     )
 
     assert result["metrics"]["preserve_region_difference_score"] == 0.0
-    assert result["metrics"]["allowed_change_region_difference_score"] > 0.0
+    assert result["metrics"]["inpaint_region_source_difference_score"] > 0.0
+    assert "inpaint_region_source_difference_score" not in result["failed_checks"]
     assert result["quality_status"] == "pass"
-    assert result["failed_checks"] == []
 
-    strict = evaluate_part(
+
+def test_protect_region_one_pixel_change_fails_quality_gate() -> None:
+    source, part, target, protect, edge_extension, inpaint = (
+        _occluded_forehead_fixture()
+    )
+    part.putpixel((0, 0), (211, 160, 130, 255))
+
+    result = evaluate_part(
         part,
         source,
         target,
@@ -185,9 +206,240 @@ def test_allowed_change_region_is_separate_from_preserve_region() -> None:
         edge_extension_mask=edge_extension,
         inpaint_mask=inpaint,
         reconstructed=source,
-        thresholds={"max_allowed_change_region_difference_score": 0.0},
     )
-    assert "allowed_change_region_difference_score" in strict["failed_checks"]
+
+    assert "preserve_region_difference_score" in result["failed_checks"]
+    assert result["quality_status"] == "fail"
+
+
+def test_inpaint_candidate_one_pixel_leak_outside_declared_masks_fails() -> None:
+    source = Image.new("RGBA", (5, 1), (0, 0, 0, 0))
+    source.putpixel((1, 0), (50, 70, 90, 255))
+    part = source.copy()
+    part.putpixel((2, 0), (80, 100, 120, 255))
+    part.putpixel((4, 0), (10, 30, 50, 255))
+    target = _mask(source.size, {(1, 0)})
+    inpaint = _mask(source.size, {(2, 0)})
+
+    result = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=target,
+        inpaint_mask=inpaint,
+        reconstructed=source,
+        thresholds={
+            "max_edge_continuity_score": 1.0,
+            "max_boundary_color_difference_score": 1.0,
+        },
+    )
+
+    assert result["metrics"]["inpaint_outside_difference_score"] > 0.0
+    assert "inpaint_outside_difference_score" in result["failed_checks"]
+
+
+def test_required_target_alpha_hole_is_a_quality_failure() -> None:
+    source, part, target, protect, edge_extension, inpaint = (
+        _occluded_forehead_fixture()
+    )
+    part.putpixel((2, 1), (210, 160, 130, 0))
+
+    result = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=protect,
+        edge_extension_mask=edge_extension,
+        inpaint_mask=inpaint,
+        reconstructed=source,
+        thresholds={
+            "max_edge_continuity_score": 1.0,
+            "max_boundary_color_difference_score": 1.0,
+        },
+    )
+
+    assert result["metrics"]["transparent_hole_px"] == 1
+    assert "transparent_hole_px" in result["failed_checks"]
+
+
+def test_unused_transparent_inpaint_permission_does_not_require_opaque_fill() -> None:
+    source = Image.new("RGBA", (3, 1), (0, 0, 0, 0))
+    source.putpixel((1, 0), (60, 80, 100, 255))
+    part = source.copy()
+    target = _mask(source.size, {(1, 0)})
+    inpaint_permission = _mask(source.size, {(2, 0)})
+
+    result = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=target,
+        inpaint_mask=inpaint_permission,
+        reconstructed=source,
+    )
+
+    assert result["metrics"]["transparent_hole_px"] == 0
+    assert result["metrics"]["edge_continuity_score"] == 0.0
+    assert result["metrics"]["boundary_color_difference_score"] == 0.0
+    assert result["quality_status"] == "pass"
+
+
+def test_inpaint_boundary_color_difference_is_a_quality_failure() -> None:
+    source, part, target, protect, edge_extension, inpaint = (
+        _occluded_forehead_fixture()
+    )
+    part.putpixel((2, 1), (20, 40, 160, 255))
+
+    result = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=protect,
+        edge_extension_mask=edge_extension,
+        inpaint_mask=inpaint,
+        reconstructed=source,
+        thresholds={"max_boundary_color_difference_score": 0.0},
+    )
+
+    assert result["metrics"]["boundary_color_difference_score"] > 0.0
+    assert "boundary_color_difference_score" in result["failed_checks"]
+
+
+def test_inpaint_edge_alpha_discontinuity_is_a_quality_failure() -> None:
+    source, part, target, protect, edge_extension, inpaint = (
+        _occluded_forehead_fixture()
+    )
+    part.putpixel((2, 1), (210, 160, 130, 128))
+
+    result = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=protect,
+        edge_extension_mask=edge_extension,
+        inpaint_mask=inpaint,
+        reconstructed=source,
+        thresholds={
+            "max_edge_continuity_score": 0.0,
+            "max_boundary_color_difference_score": 1.0,
+        },
+    )
+
+    assert result["metrics"]["edge_continuity_score"] > 0.0
+    assert "edge_continuity_score" in result["failed_checks"]
+
+
+def test_standalone_inpaint_part_without_existing_seam_skips_boundary_gate() -> None:
+    source = Image.new("RGBA", (3, 3), (0, 0, 0, 0))
+    part = Image.new("RGBA", source.size, (0, 0, 0, 0))
+    part.putpixel((1, 1), (100, 80, 60, 255))
+    inpaint = _mask(source.size, {(1, 1)})
+    empty = Image.new("L", source.size, 0)
+
+    result = evaluate_part(
+        part,
+        source,
+        inpaint,
+        overlap_margin_px=0,
+        protect_mask=empty,
+        inpaint_mask=inpaint,
+        reconstructed=source,
+    )
+
+    assert result["metrics"]["edge_continuity_score"] == 0.0
+    assert result["metrics"]["boundary_color_difference_score"] == 0.0
+    assert result["quality_status"] == "pass"
+
+
+def test_boundary_metric_uses_pairwise_differences_without_color_cancellation() -> None:
+    size = (4, 3)
+    source = Image.new("RGBA", size, (0, 0, 0, 0))
+    part = Image.new("RGBA", size, (0, 0, 0, 0))
+    blue = (0, 0, 255, 255)
+    red = (255, 0, 0, 255)
+    for point, color in (
+        ((0, 1), blue),
+        ((1, 1), red),
+        ((2, 1), blue),
+        ((3, 1), red),
+    ):
+        part.putpixel(point, color)
+    source.putpixel((0, 1), blue)
+    source.putpixel((3, 1), red)
+    target = _mask(size, {(0, 1), (1, 1), (2, 1), (3, 1)})
+    protect = _mask(size, {(0, 1), (3, 1)})
+    inpaint = _mask(size, {(1, 1), (2, 1)})
+
+    result = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=protect,
+        inpaint_mask=inpaint,
+        reconstructed=source,
+        thresholds={"max_boundary_color_difference_score": 0.0},
+    )
+
+    assert result["metrics"]["boundary_color_difference_score"] > 0.0
+    assert "boundary_color_difference_score" in result["failed_checks"]
+
+
+def test_quality_evaluation_rejects_canvas_origin_mismatch() -> None:
+    source = Image.new("RGBA", (3, 2), (20, 40, 60, 255))
+    target = Image.new("L", source.size, 255)
+
+    try:
+        evaluate_part(
+            Image.new("RGBA", (2, 2), (20, 40, 60, 255)),
+            source,
+            target,
+            overlap_margin_px=0,
+        )
+    except ValueError as exc:
+        assert "canvas/origin mismatch" in str(exc)
+    else:
+        raise AssertionError("quality evaluation must reject a shifted/cropped part canvas")
+
+
+def test_edge_extension_difference_uses_configurable_threshold() -> None:
+    source = Image.new("RGBA", (3, 1), (0, 0, 0, 0))
+    source.putpixel((1, 0), (80, 100, 120, 255))
+    source.putpixel((2, 0), (80, 100, 120, 255))
+    part = source.copy()
+    part.putpixel((2, 0), (90, 100, 120, 255))
+    target = _mask(source.size, {(1, 0)})
+    edge_extension = _mask(source.size, {(2, 0)})
+
+    permissive = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=1,
+        protect_mask=target,
+        edge_extension_mask=edge_extension,
+        reconstructed=source,
+        thresholds={"max_edge_extension_difference_score": 0.02},
+    )
+    strict = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=1,
+        protect_mask=target,
+        edge_extension_mask=edge_extension,
+        reconstructed=source,
+        thresholds={"max_edge_extension_difference_score": 0.0},
+    )
+
+    assert permissive["metrics"]["edge_extension_difference_score"] > 0.0
+    assert "edge_extension_difference_score" not in permissive["failed_checks"]
+    assert "edge_extension_difference_score" in strict["failed_checks"]
 
 
 def test_allowed_change_region_excludes_protected_pixels() -> None:
@@ -440,9 +692,10 @@ def _set_failed_check(quality: dict[str, Any], layer_id: str, check: str) -> Non
         "transparent_hole_px": "transparent_hole_px",
         "overlap_deficit_px": "overlap_deficit_px",
         "preserve_region_difference_score": "preserve_region_difference_score",
-        "allowed_change_region_difference_score": (
-            "allowed_change_region_difference_score"
-        ),
+        "edge_extension_difference_score": "edge_extension_difference_score",
+        "inpaint_outside_difference_score": "inpaint_outside_difference_score",
+        "edge_continuity_score": "edge_continuity_score",
+        "boundary_color_difference_score": "boundary_color_difference_score",
         "visual_reconstruction_difference_score": (
             "visual_reconstruction_difference_score"
         ),
@@ -504,6 +757,136 @@ def test_refinement_inpaint_to_redraw_requires_review() -> None:
     assert asset["review_required"] is True
     assert "redraw" in eyes_job["operations"]
     assert validate_asset_manifest(derive_asset_manifest(refined)).errors == ()
+
+
+def test_refinement_contract_routes_each_new_quality_failure() -> None:
+    assert select_generation_method(
+        "inpaint", ["preserve_region_difference_score"]
+    ) == "extract"
+    assert select_generation_method(
+        "inpaint", ["edge_extension_difference_score"]
+    ) == "extract_and_edge_repair"
+    assert select_generation_method(
+        "inpaint", ["inpaint_outside_difference_score"]
+    ) == "inpaint"
+    assert select_generation_method(
+        "inpaint", ["boundary_color_difference_score"]
+    ) == "inpaint"
+
+
+def test_refinement_inpaint_outside_failure_retries_mask_compositing() -> None:
+    queue = load_yaml_mapping(Path("examples/asset_generation_queue.sample.yaml"))
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    asset = next(item for item in queue["assets"] if item["layer_id"] == "eye_white_L")
+    asset["generation_method"] = "inpaint"
+    asset["inferred"] = True
+    asset["review_required"] = True
+    _set_failed_check(quality, "eye_white_L", "inpaint_outside_difference_score")
+
+    plan = build_refinement_plan(queue, quality, quality_ref="quality.yaml")
+
+    assert plan["jobs"][0]["to_generation_method"] == "inpaint"
+    assert (
+        plan["jobs"][0]["requested_action"]
+        == "retry_same_inpaint_with_mask_compositing"
+    )
+
+
+def test_refinement_boundary_failure_returns_to_candidate_ranking() -> None:
+    queue = load_yaml_mapping(Path("examples/asset_generation_queue.sample.yaml"))
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    asset = next(item for item in queue["assets"] if item["layer_id"] == "eye_white_L")
+    asset["generation_method"] = "inpaint"
+    asset["inferred"] = True
+    asset["review_required"] = True
+    _set_failed_check(quality, "eye_white_L", "boundary_color_difference_score")
+
+    plan = build_refinement_plan(queue, quality, quality_ref="quality.yaml")
+
+    assert plan["jobs"][0]["to_generation_method"] == "inpaint"
+    assert plan["jobs"][0]["requested_action"] == "regenerate_or_rerank_inpaint_candidate"
+
+
+def test_non_inpaint_failure_transitions_to_method_matching_requested_action() -> None:
+    queue = load_yaml_mapping(Path("examples/asset_generation_queue.sample.yaml"))
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    asset = next(item for item in queue["assets"] if item["layer_id"] == "eye_white_L")
+    asset["generation_method"] = "extract_and_edge_repair"
+    _set_failed_check(quality, "eye_white_L", "inpaint_outside_difference_score")
+
+    plan = build_refinement_plan(queue, quality, quality_ref="quality.yaml")
+
+    assert plan["jobs"][0]["to_generation_method"] == "inpaint"
+    assert plan["jobs"][0]["requested_action"] == "run_inpaint_with_corrected_mask_compositing"
+    refined = apply_refinement_plan(queue, plan)
+    refined_asset = next(
+        item for item in refined["assets"] if item["layer_id"] == "eye_white_L"
+    )
+    assert refined_asset["inferred"] is True
+    assert refined_asset["review_required"] is True
+    assert validate_asset_manifest(derive_asset_manifest(refined)).errors == ()
+
+
+
+def test_strict_inpaint_outside_failure_precedes_edge_repair_in_mixed_failure() -> None:
+    queue = load_yaml_mapping(Path("examples/asset_generation_queue.sample.yaml"))
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    asset = next(item for item in queue["assets"] if item["layer_id"] == "eye_white_L")
+    asset["generation_method"] = "inpaint"
+    asset["inferred"] = True
+    asset["review_required"] = True
+    _set_failed_check(quality, "eye_white_L", "inpaint_outside_difference_score")
+    failed_part = next(
+        part for part in quality["parts"] if part["layer_id"] == "eye_white_L"
+    )
+    failed_part["metrics"]["edge_extension_difference_score"] = 1.0
+    failed_part["failed_checks"].append("edge_extension_difference_score")
+
+    plan = build_refinement_plan(queue, quality, quality_ref="quality.yaml")
+
+    assert plan["jobs"][0]["to_generation_method"] == "inpaint"
+    assert (
+        plan["jobs"][0]["requested_action"]
+        == "retry_same_inpaint_with_mask_compositing"
+    )
+
+
+def test_required_target_hole_precedes_overlap_edge_repair() -> None:
+    queue = load_yaml_mapping(Path("examples/asset_generation_queue.sample.yaml"))
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    asset = next(item for item in queue["assets"] if item["layer_id"] == "eye_white_L")
+    asset["generation_method"] = "inpaint"
+    asset["inferred"] = True
+    asset["review_required"] = True
+    _set_failed_check(quality, "eye_white_L", "transparent_hole_px")
+    failed_part = next(
+        part for part in quality["parts"] if part["layer_id"] == "eye_white_L"
+    )
+    failed_part["metrics"]["overlap_deficit_px"] = 1
+    failed_part["failed_checks"].append("overlap_deficit_px")
+
+    plan = build_refinement_plan(queue, quality, quality_ref="quality.yaml")
+
+    assert plan["jobs"][0]["to_generation_method"] == "transparency_fill"
+    assert plan["jobs"][0]["requested_action"] == "fill_required_target_transparency"
+
+
+def test_white_halo_source_repair_precedes_visual_inpaint_escalation() -> None:
+    queue = load_yaml_mapping(Path("examples/asset_generation_queue.sample.yaml"))
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    asset = next(item for item in queue["assets"] if item["layer_id"] == "eye_white_L")
+    asset["generation_method"] = "extract"
+    _set_failed_check(quality, "eye_white_L", "white_halo_px")
+    failed_part = next(
+        part for part in quality["parts"] if part["layer_id"] == "eye_white_L"
+    )
+    failed_part["metrics"]["visual_reconstruction_difference_score"] = 1.0
+    failed_part["failed_checks"].append("visual_reconstruction_difference_score")
+
+    plan = build_refinement_plan(queue, quality, quality_ref="quality.yaml")
+
+    assert plan["jobs"][0]["to_generation_method"] == "extract_and_edge_repair"
+    assert plan["jobs"][0]["requested_action"] == "rerun_extract_and_edge_repair"
 
 
 def test_atomic_png_publish_replaces_without_temp_residue(tmp_path: Path) -> None:
@@ -607,6 +990,16 @@ def test_pipeline_samples_and_schemas_are_loadable_and_valid() -> None:
         assert data["$schema"].startswith("https://json-schema.org/")
         assert data["properties"]["schema_version"]["const"] == 2
 
+    quality_schema: Any = yaml.safe_load(
+        Path("schemas/asset_quality.schema.yaml").read_text(encoding="utf-8")
+    )
+    metric_requirements = quality_schema["properties"]["parts"]["items"]["properties"][
+        "metrics"
+    ]["required"]
+    threshold_requirements = quality_schema["properties"]["thresholds"]["required"]
+    assert "inpaint_region_source_difference_score" in metric_requirements
+    assert "max_inpaint_region_source_difference_score" not in threshold_requirements
+
 
 def test_mask_manifest_requires_queue_provenance() -> None:
     manifest = load_yaml_mapping(Path("examples/mask_manifest.sample.yaml"))
@@ -684,6 +1077,14 @@ def test_visual_reconstruction_difference_uses_configurable_threshold() -> None:
     assert validate_asset_quality(quality) == []
 
 
+def test_inpaint_source_difference_is_not_a_schema_quality_gate() -> None:
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    pass_part = next(part for part in quality["parts"] if part["quality_status"] == "pass")
+    pass_part["metrics"]["inpaint_region_source_difference_score"] = 1.0
+
+    assert validate_asset_quality(quality) == []
+
+
 def test_quality_status_and_failed_checks_must_match_metrics() -> None:
     quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
     quality["parts"][0]["quality_status"] = "pass"
@@ -706,6 +1107,33 @@ def test_preserve_region_threshold_must_remain_zero() -> None:
         and "must equal 0" in issue.message
         for issue in issues
     )
+
+
+def test_inpaint_outside_threshold_must_remain_zero() -> None:
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    quality["thresholds"]["max_inpaint_outside_difference_score"] = 0.01
+
+    issues = validate_asset_quality(quality)
+
+    assert any(
+        issue.path == "thresholds.max_inpaint_outside_difference_score"
+        and "must equal 0" in issue.message
+        for issue in issues
+    )
+
+    source = Image.new("RGBA", (1, 1), (20, 40, 60, 255))
+    try:
+        evaluate_part(
+            source,
+            source,
+            Image.new("L", source.size, 255),
+            overlap_margin_px=0,
+            thresholds={"max_inpaint_outside_difference_score": 0.01},
+        )
+    except ValueError as exc:
+        assert "max_inpaint_outside_difference_score must equal 0" in str(exc)
+    else:
+        raise AssertionError("inpaint-outside quality threshold must stay fixed at zero")
 
 
 def test_legacy_global_threshold_field_is_rejected() -> None:

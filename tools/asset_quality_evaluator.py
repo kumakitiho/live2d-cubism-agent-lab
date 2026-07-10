@@ -27,7 +27,10 @@ DEFAULT_QUALITY_THRESHOLDS: dict[str, int | float] = {
     "max_transparent_hole_px": 0,
     "max_overlap_deficit_px": 0,
     "max_preserve_region_difference_score": 0.0,
-    "max_allowed_change_region_difference_score": 0.05,
+    "max_edge_extension_difference_score": 0.01,
+    "max_inpaint_outside_difference_score": 0.0,
+    "max_edge_continuity_score": 0.1,
+    "max_boundary_color_difference_score": 0.15,
     "max_visual_reconstruction_difference_score": 0.01,
 }
 
@@ -132,6 +135,19 @@ def count_white_halo(part: Image.Image, source: Image.Image) -> int:
     return sum(halo.histogram()[1:])
 
 
+def _premultiply_rgba(image: Image.Image) -> Image.Image:
+    red, green, blue, alpha = image.convert("RGBA").split()
+    return Image.merge(
+        "RGBA",
+        (
+            ImageChops.multiply(red, alpha),
+            ImageChops.multiply(green, alpha),
+            ImageChops.multiply(blue, alpha),
+            alpha,
+        ),
+    )
+
+
 def premultiplied_difference_image(
     reference: Image.Image,
     candidate: Image.Image,
@@ -142,19 +158,10 @@ def premultiplied_difference_image(
     if reference_rgba.size != candidate_rgba.size:
         raise ValueError("images must use the same canvas")
 
-    def premultiply(image: Image.Image) -> Image.Image:
-        red, green, blue, alpha = image.split()
-        return Image.merge(
-            "RGBA",
-            (
-                ImageChops.multiply(red, alpha),
-                ImageChops.multiply(green, alpha),
-                ImageChops.multiply(blue, alpha),
-                alpha,
-            ),
-        )
-
-    difference = ImageChops.difference(premultiply(reference_rgba), premultiply(candidate_rgba))
+    difference = ImageChops.difference(
+        _premultiply_rgba(reference_rgba),
+        _premultiply_rgba(candidate_rgba),
+    )
     if mask is not None:
         mask_l = mask.convert("L")
         if mask_l.size != reference_rgba.size:
@@ -184,6 +191,111 @@ def difference_score(
     return total / maximum if maximum else 0.0
 
 
+def inpaint_outside_difference_score(
+    part: Image.Image,
+    source: Image.Image,
+    target_mask: Image.Image,
+    protect_mask: Image.Image,
+    edge_extension_mask: Image.Image,
+    inpaint_mask: Image.Image,
+) -> float:
+    target_and_protect = _union_masks(target_mask, protect_mask)
+    allowed_generated_region = _union_masks(edge_extension_mask, inpaint_mask)
+    source_guard = ImageChops.subtract(target_and_protect, allowed_generated_region)
+    source_difference = difference_score(source, part, source_guard)
+
+    declared_region = _union_masks(target_and_protect, allowed_generated_region)
+    outside_region = ImageChops.invert(declared_region)
+    transparent = Image.new("RGBA", part.size, (0, 0, 0, 0))
+    leak_difference = difference_score(transparent, part, outside_region)
+    return max(source_difference, leak_difference)
+
+
+def _shift_for_neighbor(image: Image.Image, dx: int, dy: int) -> Image.Image:
+    """Return an image where pixel (x, y) reads the original (x + dx, y + dy)."""
+    width, height = image.size
+    source_left = max(0, dx)
+    source_top = max(0, dy)
+    source_right = min(width, width + dx)
+    source_bottom = min(height, height + dy)
+    result = Image.new(image.mode, image.size, 0)
+    if source_left >= source_right or source_top >= source_bottom:
+        return result
+    result.paste(
+        image.crop((source_left, source_top, source_right, source_bottom)),
+        (max(0, -dx), max(0, -dy)),
+    )
+    return result
+
+
+def _masked_channel_difference_total(
+    channel: Image.Image,
+    shifted_channel: Image.Image,
+    mask: Image.Image,
+) -> int:
+    difference = ImageChops.difference(channel, shifted_channel)
+    masked = ImageChops.multiply(difference, mask)
+    return sum(value * count for value, count in enumerate(masked.histogram()))
+
+
+def inpaint_boundary_metrics(
+    part: Image.Image,
+    inpaint_mask: Image.Image,
+    seam_support_mask: Image.Image,
+) -> tuple[float, float]:
+    inpaint = inpaint_mask.convert("L")
+    seam_support = seam_support_mask.convert("L")
+    if part.size != inpaint.size or seam_support.size != inpaint.size:
+        raise ValueError("part and inpaint boundary masks must use the same canvas")
+    bbox = inpaint.getbbox()
+    if bbox is None:
+        return 0.0, 0.0
+
+    left, top, right, bottom = bbox
+    region = (
+        max(0, left - 1),
+        max(0, top - 1),
+        min(inpaint.width, right + 1),
+        min(inpaint.height, bottom + 1),
+    )
+    inpaint = inpaint.crop(region)
+    seam_support = seam_support.crop(region)
+    part = part.crop(region)
+
+    inner = ImageChops.subtract(inpaint, inpaint.filter(ImageFilter.MinFilter(3)))
+    premultiplied = _premultiply_rgba(part)
+    red, green, blue, alpha = premultiplied.split()
+    pair_count = 0
+    alpha_difference_total = 0
+    color_difference_total = 0
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dx == 0 and dy == 0:
+                continue
+            shifted_support = _shift_for_neighbor(seam_support, dx, dy)
+            pair_mask = ImageChops.darker(inner, shifted_support)
+            current_pair_count = sum(pair_mask.histogram()[1:])
+            if current_pair_count == 0:
+                continue
+            pair_count += current_pair_count
+            alpha_difference_total += _masked_channel_difference_total(
+                alpha,
+                _shift_for_neighbor(alpha, dx, dy),
+                pair_mask,
+            )
+            for channel in (red, green, blue):
+                color_difference_total += _masked_channel_difference_total(
+                    channel,
+                    _shift_for_neighbor(channel, dx, dy),
+                    pair_mask,
+                )
+    if pair_count == 0:
+        return 0.0, 0.0
+    edge_continuity_score = alpha_difference_total / (pair_count * 255)
+    boundary_color_difference_score = color_difference_total / (pair_count * 3 * 255)
+    return edge_continuity_score, boundary_color_difference_score
+
+
 def foreground_reconstruction_mask(
     part_regions: list[Image.Image],
     reconstructed: Image.Image,
@@ -211,7 +323,10 @@ def _validated_thresholds(
             raise ValueError(f"{key} must be a non-negative integer")
     for key in (
         "max_preserve_region_difference_score",
-        "max_allowed_change_region_difference_score",
+        "max_edge_extension_difference_score",
+        "max_inpaint_outside_difference_score",
+        "max_edge_continuity_score",
+        "max_boundary_color_difference_score",
         "max_visual_reconstruction_difference_score",
     ):
         value = result.get(key)
@@ -223,6 +338,8 @@ def _validated_thresholds(
             raise ValueError(f"{key} must be between 0 and 1")
     if float(result["max_preserve_region_difference_score"]) != 0.0:
         raise ValueError("max_preserve_region_difference_score must equal 0")
+    if float(result["max_inpaint_outside_difference_score"]) != 0.0:
+        raise ValueError("max_inpaint_outside_difference_score must equal 0")
     return result
 
 
@@ -243,13 +360,37 @@ def evaluate_part(
     protect = protect_mask or target_mask
     edge_extension = edge_extension_mask or empty
     inpaint = inpaint_mask or empty
+    reconstructed_image = reconstructed or source
+    expected_canvas = source.size
+    canvases = {
+        "part": part.size,
+        "target_mask": target_mask.size,
+        "protect_mask": protect.size,
+        "edge_extension_mask": edge_extension.size,
+        "inpaint_mask": inpaint.size,
+        "reconstructed": reconstructed_image.size,
+    }
+    mismatched = {name: size for name, size in canvases.items() if size != expected_canvas}
+    if mismatched:
+        raise ValueError(
+            f"canvas/origin mismatch: expected={expected_canvas}, mismatched={mismatched}"
+        )
     allowed_change = allowed_change_region_mask(
         edge_extension,
         inpaint,
         protect_mask=protect,
     )
     attribution_region = _union_masks(target_mask, edge_extension, inpaint)
-    reconstructed_image = reconstructed or source
+    candidate_inpaint = ImageChops.darker(inpaint, _binary_alpha(part))
+    seam_support = ImageChops.subtract(
+        _union_masks(target_mask, protect, edge_extension),
+        inpaint,
+    )
+    edge_continuity_score, boundary_color_difference_score = inpaint_boundary_metrics(
+        part,
+        candidate_inpaint,
+        seam_support,
+    )
     metrics: dict[str, int | float] = {
         "white_halo_px": count_white_halo(part, source),
         "transparent_hole_px": count_transparent_holes(part, target_mask),
@@ -260,11 +401,26 @@ def evaluate_part(
             edge_extension_mask=edge_extension,
         ),
         "preserve_region_difference_score": difference_score(source, part, protect),
-        "allowed_change_region_difference_score": difference_score(
+        "edge_extension_difference_score": difference_score(
             source,
             part,
-            allowed_change,
+            edge_extension,
         ),
+        "inpaint_region_source_difference_score": difference_score(
+            source,
+            part,
+            inpaint,
+        ),
+        "inpaint_outside_difference_score": inpaint_outside_difference_score(
+            part,
+            source,
+            target_mask,
+            protect,
+            edge_extension,
+            inpaint,
+        ),
+        "edge_continuity_score": edge_continuity_score,
+        "boundary_color_difference_score": boundary_color_difference_score,
         "visual_reconstruction_difference_score": difference_score(
             source,
             reconstructed_image,
@@ -276,9 +432,10 @@ def evaluate_part(
         "transparent_hole_px": "max_transparent_hole_px",
         "overlap_deficit_px": "max_overlap_deficit_px",
         "preserve_region_difference_score": "max_preserve_region_difference_score",
-        "allowed_change_region_difference_score": (
-            "max_allowed_change_region_difference_score"
-        ),
+        "edge_extension_difference_score": "max_edge_extension_difference_score",
+        "inpaint_outside_difference_score": "max_inpaint_outside_difference_score",
+        "edge_continuity_score": "max_edge_continuity_score",
+        "boundary_color_difference_score": "max_boundary_color_difference_score",
         "visual_reconstruction_difference_score": (
             "max_visual_reconstruction_difference_score"
         ),
@@ -311,9 +468,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-transparent-hole-px", type=int, default=0)
     parser.add_argument("--max-overlap-deficit-px", type=int, default=0)
     parser.add_argument(
-        "--max-allowed-change-region-difference-score",
+        "--max-edge-extension-difference-score",
         type=float,
-        default=0.05,
+        default=0.01,
+    )
+    parser.add_argument(
+        "--max-inpaint-outside-difference-score",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--max-edge-continuity-score",
+        type=float,
+        default=0.1,
+    )
+    parser.add_argument(
+        "--max-boundary-color-difference-score",
+        type=float,
+        default=0.15,
     )
     parser.add_argument(
         "--max-visual-reconstruction-difference-score",
@@ -377,8 +549,15 @@ def main(argv: list[str] | None = None) -> int:
                 "max_transparent_hole_px": args.max_transparent_hole_px,
                 "max_overlap_deficit_px": args.max_overlap_deficit_px,
                 "max_preserve_region_difference_score": 0.0,
-                "max_allowed_change_region_difference_score": (
-                    args.max_allowed_change_region_difference_score
+                "max_edge_extension_difference_score": (
+                    args.max_edge_extension_difference_score
+                ),
+                "max_inpaint_outside_difference_score": (
+                    args.max_inpaint_outside_difference_score
+                ),
+                "max_edge_continuity_score": args.max_edge_continuity_score,
+                "max_boundary_color_difference_score": (
+                    args.max_boundary_color_difference_score
                 ),
                 "max_visual_reconstruction_difference_score": (
                     args.max_visual_reconstruction_difference_score
@@ -423,6 +602,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not isinstance(margin, int):
                     raise ValueError(f"parts[{index}] requires overlap_margin_px")
                 part = load_rgba(resolve_inside_base(base_dir, part_value, "part output_file"))
+                require_manifest_canvas(part, manifest, f"part {layer_id}")
                 assert isinstance(target_value, str)
                 assert isinstance(protect_value, str)
                 assert isinstance(edge_extension_value, str)
@@ -491,7 +671,11 @@ def main(argv: list[str] | None = None) -> int:
                             "transparent_hole_px": 0,
                             "overlap_deficit_px": 0,
                             "preserve_region_difference_score": 0.0,
-                            "allowed_change_region_difference_score": 0.0,
+                            "edge_extension_difference_score": 0.0,
+                            "inpaint_region_source_difference_score": 0.0,
+                            "inpaint_outside_difference_score": 0.0,
+                            "edge_continuity_score": 0.0,
+                            "boundary_color_difference_score": 0.0,
                             "visual_reconstruction_difference_score": 0.0,
                         },
                         "failed_checks": [],

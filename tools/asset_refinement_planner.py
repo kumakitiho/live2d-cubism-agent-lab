@@ -28,10 +28,20 @@ def next_generation_method(current: str) -> str:
 FAILED_CHECK_METHOD_HINTS = {
     "white_halo_px": "extract_and_edge_repair",
     "preserve_region_difference_score": "extract",
-    "allowed_change_region_difference_score": "transparency_fill",
-    "visual_reconstruction_difference_score": "transparency_fill",
+    "edge_extension_difference_score": "extract_and_edge_repair",
+    "edge_continuity_score": "inpaint",
+    "boundary_color_difference_score": "inpaint",
+    "visual_reconstruction_difference_score": "inpaint",
     "transparent_hole_px": "transparency_fill",
-    "overlap_deficit_px": "transparency_fill",
+    "overlap_deficit_px": "extract_and_edge_repair",
+}
+
+INPAINT_RETRY_CHECKS = {
+    "inpaint_outside_difference_score",
+}
+INPAINT_RERANK_CHECKS = {
+    "edge_continuity_score",
+    "boundary_color_difference_score",
 }
 
 
@@ -40,6 +50,19 @@ def select_generation_method(current: str, failed_checks: list[str]) -> str:
         raise ValueError(f"unknown generation method: {current}")
     if "preserve_region_difference_score" in failed_checks:
         return "extract"
+    if INPAINT_RETRY_CHECKS.intersection(failed_checks):
+        return current if current in {"inpaint", "redraw"} else "inpaint"
+    if "transparent_hole_px" in failed_checks:
+        return "transparency_fill"
+    if "white_halo_px" in failed_checks and current == "extract":
+        return "extract_and_edge_repair"
+    if (
+        "edge_extension_difference_score" in failed_checks
+        or "overlap_deficit_px" in failed_checks
+    ):
+        return "extract_and_edge_repair"
+    if INPAINT_RERANK_CHECKS.intersection(failed_checks):
+        return current if current in {"inpaint", "redraw"} else "inpaint"
     current_index = GENERATION_METHODS.index(current)
     hinted_methods = {
         FAILED_CHECK_METHOD_HINTS[check]
@@ -52,6 +75,37 @@ def select_generation_method(current: str, failed_checks: list[str]) -> str:
     if forward_hints:
         return max(forward_hints, key=GENERATION_METHODS.index)
     return next_generation_method(current)
+
+
+def requested_refinement_action(
+    current: str,
+    target: str,
+    failed_checks: list[str],
+) -> str:
+    if "preserve_region_difference_score" in failed_checks:
+        return "reset_from_source_and_reextract"
+    if "inpaint_outside_difference_score" in failed_checks:
+        return (
+            "retry_same_inpaint_with_mask_compositing"
+            if current == target == "inpaint"
+            else f"run_{target}_with_corrected_mask_compositing"
+        )
+    if "transparent_hole_px" in failed_checks:
+        return "fill_required_target_transparency"
+    if (
+        "edge_extension_difference_score" in failed_checks
+        or "overlap_deficit_px" in failed_checks
+    ):
+        return "rerun_extract_and_edge_repair"
+    if "white_halo_px" in failed_checks:
+        return (
+            "rerun_extract_and_edge_repair"
+            if target == "extract_and_edge_repair"
+            else f"advance_to_{target}_after_edge_repair_exhausted"
+        )
+    if INPAINT_RERANK_CHECKS.intersection(failed_checks):
+        return f"regenerate_or_rerank_{target}_candidate"
+    return "regenerate_failed_part_only"
 
 
 def failed_layer_ids(quality: Mapping[str, Any]) -> set[str]:
@@ -129,17 +183,18 @@ def build_refinement_plan(
             isinstance(check, str) for check in failed_checks
         ):
             raise ValueError(f"quality part {layer_id} requires failed_checks")
+        target_method = select_generation_method(current, failed_checks)
         jobs.append(
             {
                 "layer_id": layer_id,
                 "from_generation_method": current,
-                "to_generation_method": select_generation_method(current, failed_checks),
+                "to_generation_method": target_method,
                 "refinement_attempt": attempts + 1,
                 "failed_checks": failed_checks,
-                "requested_action": (
-                    "reset_from_source_and_reextract"
-                    if "preserve_region_difference_score" in failed_checks
-                    else "regenerate_failed_part_only"
+                "requested_action": requested_refinement_action(
+                    current,
+                    target_method,
+                    failed_checks,
                 ),
             }
         )

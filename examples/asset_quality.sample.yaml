@@ -18,7 +18,11 @@ parts:
       transparent_hole_px: 3
       overlap_deficit_px: 6
       preserve_region_difference_score: 0.002
-      allowed_change_region_difference_score: 0.0
+      edge_extension_difference_score: 0.0
+      inpaint_region_source_difference_score: 0.25
+      inpaint_outside_difference_score: 0.0
+      edge_continuity_score: 0.0
+      boundary_color_difference_score: 0.0
       visual_reconstruction_difference_score: 0.002
     failed_checks:
       - transparent_hole_px
@@ -35,7 +39,11 @@ parts:
       transparent_hole_px: 0
       overlap_deficit_px: 0
       preserve_region_difference_score: 0.0
-      allowed_change_region_difference_score: 0.0
+      edge_extension_difference_score: 0.0
+      inpaint_region_source_difference_score: 0.0
+      inpaint_outside_difference_score: 0.0
+      edge_continuity_score: 0.0
+      boundary_color_difference_score: 0.0
       visual_reconstruction_difference_score: 0.0
     failed_checks: []
   - layer_id: mouth_inner
@@ -75,7 +83,10 @@ thresholds:
   max_transparent_hole_px: 0
   max_overlap_deficit_px: 0
   max_preserve_region_difference_score: 0.0
-  max_allowed_change_region_difference_score: 0.05
+  max_edge_extension_difference_score: 0.01
+  max_inpaint_outside_difference_score: 0.0
+  max_edge_continuity_score: 0.1
+  max_boundary_color_difference_score: 0.15
   max_visual_reconstruction_difference_score: 0.01
 summary:
   total_parts: 6

@@ -26,9 +26,9 @@ description: validator済みcharacter_spec.yamlと1枚のsource画像からLive2
 7. 各partは `extract` → `extract_and_edge_repair` → `transparency_fill` → `inpaint` → `redraw` の順に、source画素を最も多く保持できる手法を優先する。隠れ部分を `inferred: true`、`review_required: true` とする。
 8. target maskはsoft grayscaleのまま抽出alphaへ使う。protect maskはsource保持領域、edge extension maskはsource-preserving edge repairとoverlap coverage、inpaint maskは生成inpaintingが変更可能な隠れ領域として分離し、判定時は明示thresholdでbinary化する。全partをsourceと同じcanvas size・originで保持する。
 9. `tools.asset_recomposer` でdraw order順に再合成し、`reconstructed_source.png` とsourceのdifference imageを作る。
-10. `tools.asset_quality_evaluator` で `include_in_import: true` のpartだけを対象にwhite halo、透明穴、明示edge-extension coverage、protect領域の完全一致、edge/inpaint許可領域の閾値付き差分、premultiplied alphaによる視覚再合成差分を確認する。再合成差分はforeground/reconstruction maskへ限定し、可能な限りpartへ帰属させる。非import guideをquality coverageへ含めない。
+10. `tools.asset_quality_evaluator` で `include_in_import: true` のpartだけを対象にwhite halo、透明穴、明示edge-extension coverage、protect領域の完全一致、edge-extensionの閾値付きsource差分、inpaint mask外の変更、inpaint境界連続性、premultiplied alphaによる視覚再合成差分を確認する。inpaint領域のsource差分は情報として記録するがgateに使わない。再合成差分はforeground/reconstruction maskへ限定し、可能な限りpartへ帰属させる。非import guideをquality coverageへ含めない。
 11. `tools.motion_stress_tester` で全import partをdraw order順に再合成し、指定partだけを `-distance / 0 / +distance` へ動かして下層の穴を目視する。part単体確認は `--debug-part-only` を使う。このpreviewは非gateで、Cubism deformation品質まで確認済みとは扱わない。
-12. quality gateに失敗したpartだけを `tools.asset_refinement_planner` で再生成候補へ戻す。preserve領域の差分は生成methodを進めずsourceからの再抽出へresetし、その他のfailed checkからlocal methodを選ぶ。inpaintへ進むときはinferred/review required、redrawへ進むときはreview requiredを設定し、所有jobのoperationsも同期する。3回失敗済みならmanual reviewで停止する。
+12. quality gateに失敗したpartだけを `tools.asset_refinement_planner` で再生成候補へ戻す。preserve違反はsource再抽出、edge-extension差分はedge repair再実行、inpaint mask外差分は同じinpaint方式のmask compositing修正、境界不連続は候補再生成またはrankingへ戻す。inpaintへ進むときはinferred/review required、redrawへ進むときはreview requiredを設定し、所有jobのoperationsも同期する。3回失敗済みならmanual reviewで停止する。
 13. `python -m tools.asset_queue_builder <queue>` をdry-runし、`--execute` でqueueから `asset_manifest.yaml` と `layer_map.yaml` を再生成する。
 14. `python -m tools.asset_manifest_validator <manifest> --base-dir .` を実行する。
 15. `python -m tools.psd_asset_builder <manifest>` でPSD build planを確認する。
