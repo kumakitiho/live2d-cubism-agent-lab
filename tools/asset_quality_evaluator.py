@@ -21,7 +21,15 @@ from tools.asset_pipeline_common import (
     validate_asset_quality,
     write_yaml,
 )
-from tools.asset_recomposer import difference_image
+
+DEFAULT_QUALITY_THRESHOLDS: dict[str, int | float] = {
+    "max_white_halo_px": 0,
+    "max_transparent_hole_px": 0,
+    "max_overlap_deficit_px": 0,
+    "max_preserve_region_difference_score": 0.0,
+    "max_allowed_change_region_difference_score": 0.05,
+    "max_visual_reconstruction_difference_score": 0.01,
+}
 
 
 def _binary_alpha(image: Image.Image, *, alpha_threshold: int = 1) -> Image.Image:
@@ -33,17 +41,44 @@ def _binary_alpha(image: Image.Image, *, alpha_threshold: int = 1) -> Image.Imag
     )
 
 
+def _union_masks(*masks: Image.Image) -> Image.Image:
+    if not masks:
+        raise ValueError("at least one mask is required")
+    result = masks[0].convert("L")
+    for mask in masks[1:]:
+        converted = mask.convert("L")
+        if converted.size != result.size:
+            raise ValueError("all masks must use the same canvas")
+        result = ImageChops.lighter(result, converted)
+    return result
+
+
+def allowed_change_region_mask(
+    edge_extension_mask: Image.Image,
+    inpaint_mask: Image.Image,
+    *,
+    protect_mask: Image.Image | None = None,
+) -> Image.Image:
+    allowed = _union_masks(edge_extension_mask, inpaint_mask)
+    if protect_mask is None:
+        return allowed
+    protect = protect_mask.convert("L")
+    if protect.size != allowed.size:
+        raise ValueError("allowed-change and protect masks must use the same canvas")
+    return ImageChops.subtract(allowed, protect)
+
+
 def desired_coverage_mask(
     target_mask: Image.Image,
-    inpaint_mask: Image.Image | None = None,
+    edge_extension_mask: Image.Image | None = None,
 ) -> Image.Image:
     target = target_mask.convert("L")
-    if inpaint_mask is None:
+    if edge_extension_mask is None:
         return target
-    inpaint = inpaint_mask.convert("L")
-    if target.size != inpaint.size:
-        raise ValueError("target and inpaint masks must use the same canvas")
-    return ImageChops.lighter(target, inpaint)
+    extension = edge_extension_mask.convert("L")
+    if target.size != extension.size:
+        raise ValueError("target and edge-extension masks must use the same canvas")
+    return ImageChops.lighter(target, extension)
 
 
 def count_transparent_holes(part: Image.Image, target_mask: Image.Image) -> int:
@@ -59,13 +94,13 @@ def count_overlap_deficit(
     target_mask: Image.Image,
     overlap_margin_px: int,
     *,
-    inpaint_mask: Image.Image | None = None,
+    edge_extension_mask: Image.Image | None = None,
 ) -> int:
     if part.size != target_mask.size:
         raise ValueError("part and target mask must use the same canvas")
     if overlap_margin_px < 0:
         raise ValueError("overlap_margin_px must be non-negative")
-    expected = desired_coverage_mask(target_mask, inpaint_mask)
+    expected = desired_coverage_mask(target_mask, edge_extension_mask)
     missing = ImageChops.subtract(expected, _binary_alpha(part))
     return sum(missing.histogram()[1:])
 
@@ -97,17 +132,29 @@ def count_white_halo(part: Image.Image, source: Image.Image) -> int:
     return sum(halo.histogram()[1:])
 
 
-def difference_score(
+def premultiplied_difference_image(
     reference: Image.Image,
     candidate: Image.Image,
     mask: Image.Image | None = None,
-) -> float:
+) -> Image.Image:
     reference_rgba = reference.convert("RGBA")
     candidate_rgba = candidate.convert("RGBA")
     if reference_rgba.size != candidate_rgba.size:
         raise ValueError("images must use the same canvas")
-    difference = ImageChops.difference(reference_rgba, candidate_rgba)
-    pixel_count = reference_rgba.width * reference_rgba.height
+
+    def premultiply(image: Image.Image) -> Image.Image:
+        red, green, blue, alpha = image.split()
+        return Image.merge(
+            "RGBA",
+            (
+                ImageChops.multiply(red, alpha),
+                ImageChops.multiply(green, alpha),
+                ImageChops.multiply(blue, alpha),
+                alpha,
+            ),
+        )
+
+    difference = ImageChops.difference(premultiply(reference_rgba), premultiply(candidate_rgba))
     if mask is not None:
         mask_l = mask.convert("L")
         if mask_l.size != reference_rgba.size:
@@ -116,14 +163,67 @@ def difference_score(
             "RGBA",
             tuple(ImageChops.multiply(channel, mask_l) for channel in difference.split()),
         )
-        pixel_count = sum(mask_l.histogram()[1:])
+    return difference
+
+
+def difference_score(
+    reference: Image.Image,
+    candidate: Image.Image,
+    mask: Image.Image | None = None,
+) -> float:
+    difference = premultiplied_difference_image(reference, candidate, mask)
+    pixel_count = reference.width * reference.height
+    if mask is not None:
+        pixel_count = sum(mask.convert("L").histogram()[1:])
     total = sum(
         value * count
         for channel in difference.split()
         for value, count in enumerate(channel.histogram())
     )
     maximum = pixel_count * 4 * 255
-    return round(total / maximum, 8) if maximum else 0.0
+    return total / maximum if maximum else 0.0
+
+
+def foreground_reconstruction_mask(
+    part_regions: list[Image.Image],
+    reconstructed: Image.Image,
+) -> Image.Image:
+    if not part_regions:
+        return _binary_alpha(reconstructed)
+    foreground = _union_masks(*part_regions)
+    if foreground.size != reconstructed.size:
+        raise ValueError("foreground regions and reconstruction must use the same canvas")
+    return ImageChops.lighter(foreground, _binary_alpha(reconstructed))
+
+
+def _validated_thresholds(
+    thresholds: Mapping[str, int | float] | None,
+) -> dict[str, int | float]:
+    result = dict(DEFAULT_QUALITY_THRESHOLDS)
+    if thresholds is not None:
+        unknown = set(thresholds) - set(DEFAULT_QUALITY_THRESHOLDS)
+        if unknown:
+            raise ValueError(f"unknown quality thresholds: {sorted(unknown)}")
+        result.update(thresholds)
+    for key in ("max_white_halo_px", "max_transparent_hole_px", "max_overlap_deficit_px"):
+        value = result.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"{key} must be a non-negative integer")
+    for key in (
+        "max_preserve_region_difference_score",
+        "max_allowed_change_region_difference_score",
+        "max_visual_reconstruction_difference_score",
+    ):
+        value = result.get(key)
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not 0 <= float(value) <= 1
+        ):
+            raise ValueError(f"{key} must be between 0 and 1")
+    if float(result["max_preserve_region_difference_score"]) != 0.0:
+        raise ValueError("max_preserve_region_difference_score must equal 0")
+    return result
 
 
 def evaluate_part(
@@ -133,8 +233,23 @@ def evaluate_part(
     *,
     overlap_margin_px: int,
     protect_mask: Image.Image | None = None,
+    edge_extension_mask: Image.Image | None = None,
     inpaint_mask: Image.Image | None = None,
+    reconstructed: Image.Image | None = None,
+    thresholds: Mapping[str, int | float] | None = None,
 ) -> dict[str, Any]:
+    config = _validated_thresholds(thresholds)
+    empty = Image.new("L", target_mask.size, 0)
+    protect = protect_mask or target_mask
+    edge_extension = edge_extension_mask or empty
+    inpaint = inpaint_mask or empty
+    allowed_change = allowed_change_region_mask(
+        edge_extension,
+        inpaint,
+        protect_mask=protect,
+    )
+    attribution_region = _union_masks(target_mask, edge_extension, inpaint)
+    reconstructed_image = reconstructed or source
     metrics: dict[str, int | float] = {
         "white_halo_px": count_white_halo(part, source),
         "transparent_hole_px": count_transparent_holes(part, target_mask),
@@ -142,19 +257,42 @@ def evaluate_part(
             part,
             target_mask,
             overlap_margin_px,
-            inpaint_mask=inpaint_mask,
+            edge_extension_mask=edge_extension,
         ),
-        "difference_score": difference_score(source, part, protect_mask or target_mask),
+        "preserve_region_difference_score": difference_score(source, part, protect),
+        "allowed_change_region_difference_score": difference_score(
+            source,
+            part,
+            allowed_change,
+        ),
+        "visual_reconstruction_difference_score": difference_score(
+            source,
+            reconstructed_image,
+            attribution_region,
+        ),
+    }
+    threshold_by_metric = {
+        "white_halo_px": "max_white_halo_px",
+        "transparent_hole_px": "max_transparent_hole_px",
+        "overlap_deficit_px": "max_overlap_deficit_px",
+        "preserve_region_difference_score": "max_preserve_region_difference_score",
+        "allowed_change_region_difference_score": (
+            "max_allowed_change_region_difference_score"
+        ),
+        "visual_reconstruction_difference_score": (
+            "max_visual_reconstruction_difference_score"
+        ),
     }
     failed_checks = [
-        name
-        for name in ("white_halo_px", "transparent_hole_px", "overlap_deficit_px")
-        if metrics[name] > 0
+        metric
+        for metric, threshold in threshold_by_metric.items()
+        if metrics[metric] > config[threshold]
     ]
-    if metrics["difference_score"] > 0:
-        failed_checks.append("source_pixel_difference")
     return {
         "quality_status": "fail" if failed_checks else "pass",
+        "allowed_change_region": {
+            "pixel_count": sum(allowed_change.histogram()[1:]),
+        },
         "metrics": metrics,
         "failed_checks": failed_checks,
     }
@@ -169,6 +307,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reconstructed", type=Path, required=True)
     parser.add_argument("--difference-output", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--max-white-halo-px", type=int, default=0)
+    parser.add_argument("--max-transparent-hole-px", type=int, default=0)
+    parser.add_argument("--max-overlap-deficit-px", type=int, default=0)
+    parser.add_argument(
+        "--max-allowed-change-region-difference-score",
+        type=float,
+        default=0.05,
+    )
+    parser.add_argument(
+        "--max-visual-reconstruction-difference-score",
+        type=float,
+        default=0.01,
+    )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -220,8 +371,22 @@ def main(argv: list[str] | None = None) -> int:
                 "quality outputs must not overwrite source, reconstruction, part, mask, "
                 "manifest, queue, or canonical derivatives"
             )
+        thresholds = _validated_thresholds(
+            {
+                "max_white_halo_px": args.max_white_halo_px,
+                "max_transparent_hole_px": args.max_transparent_hole_px,
+                "max_overlap_deficit_px": args.max_overlap_deficit_px,
+                "max_preserve_region_difference_score": 0.0,
+                "max_allowed_change_region_difference_score": (
+                    args.max_allowed_change_region_difference_score
+                ),
+                "max_visual_reconstruction_difference_score": (
+                    args.max_visual_reconstruction_difference_score
+                ),
+            }
+        )
         report_parts: list[dict[str, Any]] = []
-        global_difference_score = 0.0
+        visual_reconstruction_difference_score = 0.0
         if args.execute:
             existing = [path for path in (difference_path, output_path) if path.exists()]
             if existing and not args.force:
@@ -231,30 +396,36 @@ def main(argv: list[str] | None = None) -> int:
             reconstructed = load_rgba(reconstructed_path)
             if source.size != reconstructed.size:
                 raise ValueError("source and reconstructed images must use the same canvas")
-            difference = difference_image(source, reconstructed)
-            atomic_save_png(difference, difference_path, force=args.force)
-            global_difference_score = difference_score(source, reconstructed)
+            foreground_regions: list[Image.Image] = []
             for index, raw_part in enumerate(quality_parts):
                 layer_id = raw_part.get("layer_id")
                 part_value = raw_part.get("output_file")
                 target_value = raw_part.get("target_mask")
                 protect_value = raw_part.get("protect_mask")
+                edge_extension_value = raw_part.get("edge_extension_mask")
                 inpaint_value = raw_part.get("inpaint_mask")
                 margin = raw_part.get("overlap_margin_px")
                 if not isinstance(layer_id, str) or not isinstance(part_value, str):
                     raise ValueError(f"parts[{index}] requires layer_id and output_file")
                 if not all(
                     isinstance(value, str)
-                    for value in (target_value, protect_value, inpaint_value)
+                    for value in (
+                        target_value,
+                        protect_value,
+                        edge_extension_value,
+                        inpaint_value,
+                    )
                 ):
                     raise ValueError(
-                        f"import parts[{index}] requires target/protect/inpaint masks"
+                        f"import parts[{index}] requires target/protect/edge-extension/inpaint "
+                        "masks"
                     )
                 if not isinstance(margin, int):
                     raise ValueError(f"parts[{index}] requires overlap_margin_px")
                 part = load_rgba(resolve_inside_base(base_dir, part_value, "part output_file"))
                 assert isinstance(target_value, str)
                 assert isinstance(protect_value, str)
+                assert isinstance(edge_extension_value, str)
                 assert isinstance(inpaint_value, str)
                 target = load_binary_mask(
                     resolve_inside_base(base_dir, target_value, "target_mask"), source.size
@@ -262,29 +433,66 @@ def main(argv: list[str] | None = None) -> int:
                 protect = load_binary_mask(
                     resolve_inside_base(base_dir, protect_value, "protect_mask"), source.size
                 )
+                edge_extension = load_binary_mask(
+                    resolve_inside_base(
+                        base_dir,
+                        edge_extension_value,
+                        "edge_extension_mask",
+                    ),
+                    source.size,
+                )
                 inpaint = load_binary_mask(
                     resolve_inside_base(base_dir, inpaint_value, "inpaint_mask"), source.size
                 )
+                foreground_regions.append(_union_masks(target, edge_extension, inpaint))
                 evaluation = evaluate_part(
                     part,
                     source,
                     target,
                     overlap_margin_px=margin,
                     protect_mask=protect,
+                    edge_extension_mask=edge_extension,
                     inpaint_mask=inpaint,
+                    reconstructed=reconstructed,
+                    thresholds=thresholds,
                 )
+                allowed_change = evaluation.get("allowed_change_region")
+                if isinstance(allowed_change, dict):
+                    allowed_change.update(
+                        {
+                            "edge_extension_mask": edge_extension_value,
+                            "inpaint_mask": inpaint_value,
+                        }
+                    )
                 report_parts.append({"layer_id": layer_id, **evaluation})
+            foreground = foreground_reconstruction_mask(foreground_regions, reconstructed)
+            difference = premultiplied_difference_image(source, reconstructed, foreground)
+            atomic_save_png(difference, difference_path, force=args.force)
+            visual_reconstruction_difference_score = difference_score(
+                source,
+                reconstructed,
+                foreground,
+            )
         else:
             for raw_part in quality_parts:
+                edge_extension_value = raw_part.get("edge_extension_mask")
+                inpaint_value = raw_part.get("inpaint_mask")
                 report_parts.append(
                     {
                         "layer_id": raw_part.get("layer_id"),
                         "quality_status": "pass",
+                        "allowed_change_region": {
+                            "edge_extension_mask": edge_extension_value,
+                            "inpaint_mask": inpaint_value,
+                            "pixel_count": 0,
+                        },
                         "metrics": {
                             "white_halo_px": 0,
                             "transparent_hole_px": 0,
                             "overlap_deficit_px": 0,
-                            "difference_score": 0.0,
+                            "preserve_region_difference_score": 0.0,
+                            "allowed_change_region_difference_score": 0.0,
+                            "visual_reconstruction_difference_score": 0.0,
                         },
                         "failed_checks": [],
                     }
@@ -292,9 +500,14 @@ def main(argv: list[str] | None = None) -> int:
         failed_parts = sum(
             1 for part in report_parts if part.get("quality_status") == "fail"
         )
-        computed_result = "fail" if failed_parts or global_difference_score > 0.0 else "pass"
+        visual_threshold = float(thresholds["max_visual_reconstruction_difference_score"])
+        computed_result = (
+            "fail"
+            if failed_parts or visual_reconstruction_difference_score > visual_threshold
+            else "pass"
+        )
         report = {
-            "schema_version": 1,
+            "schema_version": 2,
             "project": manifest.get("project"),
             "derived_from": {
                 "mask_manifest": _path_value(manifest_path, base_dir),
@@ -308,12 +521,14 @@ def main(argv: list[str] | None = None) -> int:
             "reconstructed_source": _path_value(reconstructed_path, base_dir),
             "difference_image": _path_value(difference_path, base_dir),
             "parts": report_parts,
-            "thresholds": {"max_global_difference_score": 0.0},
+            "thresholds": thresholds,
             "summary": {
                 "total_parts": len(report_parts),
                 "failed_parts": failed_parts,
                 "result": computed_result,
-                "global_difference_score": global_difference_score,
+                "visual_reconstruction_difference_score": (
+                    visual_reconstruction_difference_score
+                ),
             },
         }
         issues = validate_asset_quality(report)

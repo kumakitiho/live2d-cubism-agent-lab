@@ -24,11 +24,11 @@ description: validator済みcharacter_spec.yamlと1枚のsource画像からLive2
 5. `python -m tools.asset_generation_queue_validator <queue>` で構造を検証する。通常は `strict`、未完成素材を扱う開発中だけ `validation_mode: dev` を使う。
 6. `python -m tools.mask_candidate_generator <queue>` をdry-runし、queueからmask manifestを導出する。実mask画像生成backendが未接続なら、maskを生成済みと主張しない。
 7. 各partは `extract` → `extract_and_edge_repair` → `transparency_fill` → `inpaint` → `redraw` の順に、source画素を最も多く保持できる手法を優先する。隠れ部分を `inferred: true`、`review_required: true` とする。
-8. target maskはsoft grayscaleのまま抽出alphaへ使い、protect/inpaint/coverage判定は明示thresholdでbinary化する。全partをsourceと同じcanvas size・originで保持する。
+8. target maskはsoft grayscaleのまま抽出alphaへ使う。protect maskはsource保持領域、edge extension maskはsource-preserving edge repairとoverlap coverage、inpaint maskは生成inpaintingが変更可能な隠れ領域として分離し、判定時は明示thresholdでbinary化する。全partをsourceと同じcanvas size・originで保持する。
 9. `tools.asset_recomposer` でdraw order順に再合成し、`reconstructed_source.png` とsourceのdifference imageを作る。
-10. `tools.asset_quality_evaluator` で `include_in_import: true` のpartだけを対象にwhite halo、透明穴、明示edge-extension coverage、protect mask内のsource画素差分、再合成差分を確認する。非import guideをquality coverageへ含めない。
+10. `tools.asset_quality_evaluator` で `include_in_import: true` のpartだけを対象にwhite halo、透明穴、明示edge-extension coverage、protect領域の完全一致、edge/inpaint許可領域の閾値付き差分、premultiplied alphaによる視覚再合成差分を確認する。再合成差分はforeground/reconstruction maskへ限定し、可能な限りpartへ帰属させる。非import guideをquality coverageへ含めない。
 11. `tools.motion_stress_tester` で全import partをdraw order順に再合成し、指定partだけを `-distance / 0 / +distance` へ動かして下層の穴を目視する。part単体確認は `--debug-part-only` を使う。このpreviewは非gateで、Cubism deformation品質まで確認済みとは扱わない。
-12. quality gateに失敗したpartだけを `tools.asset_refinement_planner` で再生成候補へ戻す。failed checkからlocal methodを選び、inpaintへ進むときはinferred/review required、redrawへ進むときはreview requiredを設定し、所有jobのoperationsも同期する。3回失敗済みならmanual reviewで停止する。
+12. quality gateに失敗したpartだけを `tools.asset_refinement_planner` で再生成候補へ戻す。preserve領域の差分は生成methodを進めずsourceからの再抽出へresetし、その他のfailed checkからlocal methodを選ぶ。inpaintへ進むときはinferred/review required、redrawへ進むときはreview requiredを設定し、所有jobのoperationsも同期する。3回失敗済みならmanual reviewで停止する。
 13. `python -m tools.asset_queue_builder <queue>` をdry-runし、`--execute` でqueueから `asset_manifest.yaml` と `layer_map.yaml` を再生成する。
 14. `python -m tools.asset_manifest_validator <manifest> --base-dir .` を実行する。
 15. `python -m tools.psd_asset_builder <manifest>` でPSD build planを確認する。
@@ -52,6 +52,7 @@ description: validator済みcharacter_spec.yamlと1枚のsource画像からLive2
 素材状態、layer metadata、出力先、import制約はqueue templateにだけ保持する。
 
 queue schema v3がmask/quality/refinement fieldを所有する。旧v2 queueはvalidatorとmanifest/layer map builderで読み取り互換を維持するが、実素材pipelineへ進む前にv3へ移行する。
+mask manifestとasset quality reportは、四maskと領域別quality contractを持つschema v2を使う。
 
 ## Feedback処理
 
@@ -69,7 +70,7 @@ queue schema v3がmask/quality/refinement fieldを所有する。旧v2 queueはv
 - source画像だけから見えない形状を事実として扱わない。
 - 未レビューのinferred素材をimport可能と判定しない。
 - 外部画像生成、segmentation、inpainting、Photoshop Pluginは後付け可能なadapterとして扱う。
-- 現在のPillow実装はsoft mask抽出、AA edge fringe補修、明示inpaint mask内の透明穴fill、再合成、簡易品質検査、全体平行移動previewまでである。意味segmentation、生成inpainting、redraw、実PSD writerを完了済みと主張しない。
+- 現在のPillow実装はsoft mask抽出、AA edge fringe補修、明示inpaint mask内の透明穴fill、premultiplied再合成比較、簡易品質検査、全体平行移動previewまでである。意味segmentation、生成inpainting、redraw、実PSD writerを完了済みと主張しない。
 
 ## 将来分割予定
 

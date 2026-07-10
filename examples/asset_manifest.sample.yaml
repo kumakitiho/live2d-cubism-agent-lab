@@ -39,6 +39,7 @@ parts:
   include_in_import: true
   target_mask: generated/masks/eye_white_L.target.png
   protect_mask: generated/masks/eye_white_L.protect.png
+  edge_extension_mask: generated/masks/eye_white_L.edge-extension.png
   inpaint_mask: generated/masks/eye_white_L.inpaint.png
   dependencies: []
   draw_order: 50
@@ -61,6 +62,7 @@ parts:
   include_in_import: true
   target_mask: generated/masks/eye_white_R.target.png
   protect_mask: generated/masks/eye_white_R.protect.png
+  edge_extension_mask: generated/masks/eye_white_R.edge-extension.png
   inpaint_mask: generated/masks/eye_white_R.inpaint.png
   dependencies: []
   draw_order: 60
@@ -83,6 +85,7 @@ parts:
   include_in_import: true
   target_mask: generated/masks/mouth_inner.target.png
   protect_mask: generated/masks/mouth_inner.protect.png
+  edge_extension_mask: generated/masks/mouth_inner.edge-extension.png
   inpaint_mask: generated/masks/mouth_inner.inpaint.png
   dependencies: []
   draw_order: 40
@@ -105,6 +108,7 @@ parts:
   include_in_import: true
   target_mask: generated/masks/hair_back.target.png
   protect_mask: generated/masks/hair_back.protect.png
+  edge_extension_mask: generated/masks/hair_back.edge-extension.png
   inpaint_mask: generated/masks/hair_back.inpaint.png
   dependencies: []
   draw_order: 10
@@ -127,6 +131,7 @@ parts:
   include_in_import: true
   target_mask: generated/masks/torso_base.target.png
   protect_mask: generated/masks/torso_base.protect.png
+  edge_extension_mask: generated/masks/torso_base.edge-extension.png
   inpaint_mask: generated/masks/torso_base.inpaint.png
   dependencies: []
   draw_order: 20
@@ -149,6 +154,7 @@ parts:
   include_in_import: true
   target_mask: generated/masks/face_hidden_fill.target.png
   protect_mask: generated/masks/face_hidden_fill.protect.png
+  edge_extension_mask: generated/masks/face_hidden_fill.edge-extension.png
   inpaint_mask: generated/masks/face_hidden_fill.inpaint.png
   dependencies: []
   draw_order: 30

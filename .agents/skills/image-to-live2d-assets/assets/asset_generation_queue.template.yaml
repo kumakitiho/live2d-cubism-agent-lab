@@ -34,6 +34,7 @@ assets:
     source_file: generated/parts/eye_white_L.png
     target_mask: generated/masks/eye_white_L.target.png
     protect_mask: generated/masks/eye_white_L.protect.png
+    edge_extension_mask: generated/masks/eye_white_L.edge-extension.png
     inpaint_mask: generated/masks/eye_white_L.inpaint.png
     prompt_id: part-eye-white-L
     generation_method: extract_and_edge_repair
@@ -55,6 +56,7 @@ assets:
     source_file: generated/parts/eye_white_R.png
     target_mask: generated/masks/eye_white_R.target.png
     protect_mask: generated/masks/eye_white_R.protect.png
+    edge_extension_mask: generated/masks/eye_white_R.edge-extension.png
     inpaint_mask: generated/masks/eye_white_R.inpaint.png
     prompt_id: part-eye-white-R
     generation_method: extract_and_edge_repair
@@ -76,6 +78,7 @@ assets:
     source_file: generated/parts/mouth_inner.png
     target_mask: generated/masks/mouth_inner.target.png
     protect_mask: generated/masks/mouth_inner.protect.png
+    edge_extension_mask: generated/masks/mouth_inner.edge-extension.png
     inpaint_mask: generated/masks/mouth_inner.inpaint.png
     prompt_id: part-mouth-inner
     generation_method: inpaint
@@ -97,6 +100,7 @@ assets:
     source_file: generated/parts/hair_back.png
     target_mask: generated/masks/hair_back.target.png
     protect_mask: generated/masks/hair_back.protect.png
+    edge_extension_mask: generated/masks/hair_back.edge-extension.png
     inpaint_mask: generated/masks/hair_back.inpaint.png
     prompt_id: part-hair-back
     generation_method: extract_and_edge_repair
@@ -118,6 +122,7 @@ assets:
     source_file: generated/parts/torso_base.png
     target_mask: generated/masks/torso_base.target.png
     protect_mask: generated/masks/torso_base.protect.png
+    edge_extension_mask: generated/masks/torso_base.edge-extension.png
     inpaint_mask: generated/masks/torso_base.inpaint.png
     prompt_id: part-torso-base
     generation_method: extract_and_edge_repair
@@ -139,6 +144,7 @@ assets:
     source_file: generated/parts/face_hidden_fill.png
     target_mask: generated/masks/face_hidden_fill.target.png
     protect_mask: generated/masks/face_hidden_fill.protect.png
+    edge_extension_mask: generated/masks/face_hidden_fill.edge-extension.png
     inpaint_mask: generated/masks/face_hidden_fill.inpaint.png
     prompt_id: part-face-hidden-fill
     generation_method: inpaint

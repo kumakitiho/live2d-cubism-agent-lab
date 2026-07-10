@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 project: sample-one-image-model
 derived_from:
   mask_manifest: examples/mask_manifest.sample.yaml
@@ -9,44 +9,76 @@ difference_image: generated/source_difference.png
 parts:
   - layer_id: eye_white_L
     quality_status: fail
+    allowed_change_region:
+      edge_extension_mask: generated/masks/eye_white_L.edge-extension.png
+      inpaint_mask: generated/masks/eye_white_L.inpaint.png
+      pixel_count: 9
     metrics:
       white_halo_px: 0
       transparent_hole_px: 3
       overlap_deficit_px: 6
-      difference_score: 0.002
-    failed_checks: [transparent_hole_px, overlap_deficit_px, source_pixel_difference]
+      preserve_region_difference_score: 0.002
+      allowed_change_region_difference_score: 0.0
+      visual_reconstruction_difference_score: 0.002
+    failed_checks:
+      - transparent_hole_px
+      - overlap_deficit_px
+      - preserve_region_difference_score
   - layer_id: eye_white_R
     quality_status: pass
-    metrics:
-      white_halo_px: 0
-      transparent_hole_px: 0
-      overlap_deficit_px: 0
-      difference_score: 0.0
-    failed_checks: []
-  - layer_id: mouth_inner
-    quality_status: pass
+    allowed_change_region:
+      edge_extension_mask: generated/masks/eye_white_R.edge-extension.png
+      inpaint_mask: generated/masks/eye_white_R.inpaint.png
+      pixel_count: 0
     metrics: &pass_metrics
       white_halo_px: 0
       transparent_hole_px: 0
       overlap_deficit_px: 0
-      difference_score: 0.0
+      preserve_region_difference_score: 0.0
+      allowed_change_region_difference_score: 0.0
+      visual_reconstruction_difference_score: 0.0
+    failed_checks: []
+  - layer_id: mouth_inner
+    quality_status: pass
+    allowed_change_region:
+      edge_extension_mask: generated/masks/mouth_inner.edge-extension.png
+      inpaint_mask: generated/masks/mouth_inner.inpaint.png
+      pixel_count: 0
+    metrics: *pass_metrics
     failed_checks: []
   - layer_id: hair_back
     quality_status: pass
+    allowed_change_region:
+      edge_extension_mask: generated/masks/hair_back.edge-extension.png
+      inpaint_mask: generated/masks/hair_back.inpaint.png
+      pixel_count: 0
     metrics: *pass_metrics
     failed_checks: []
   - layer_id: torso_base
     quality_status: pass
+    allowed_change_region:
+      edge_extension_mask: generated/masks/torso_base.edge-extension.png
+      inpaint_mask: generated/masks/torso_base.inpaint.png
+      pixel_count: 0
     metrics: *pass_metrics
     failed_checks: []
   - layer_id: face_hidden_fill
     quality_status: pass
+    allowed_change_region:
+      edge_extension_mask: generated/masks/face_hidden_fill.edge-extension.png
+      inpaint_mask: generated/masks/face_hidden_fill.inpaint.png
+      pixel_count: 0
     metrics: *pass_metrics
     failed_checks: []
 thresholds:
-  max_global_difference_score: 0.0
+  max_white_halo_px: 0
+  max_transparent_hole_px: 0
+  max_overlap_deficit_px: 0
+  max_preserve_region_difference_score: 0.0
+  max_allowed_change_region_difference_score: 0.05
+  max_visual_reconstruction_difference_score: 0.01
 summary:
   total_parts: 6
   failed_parts: 1
   result: fail
-  global_difference_score: 0.001
+  visual_reconstruction_difference_score: 0.001

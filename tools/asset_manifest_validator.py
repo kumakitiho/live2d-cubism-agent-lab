@@ -140,6 +140,12 @@ def validate_asset_manifest(
         errors.append(ManifestIssue("schema_version", "must equal 1"))
     if not isinstance(data.get("project"), str) or not str(data.get("project", "")).strip():
         errors.append(ManifestIssue("project", "must be a non-empty string"))
+    derived_from = data.get("derived_from")
+    queue_schema_version = (
+        derived_from.get("queue_schema_version")
+        if isinstance(derived_from, Mapping)
+        else None
+    )
 
     source_image = data.get("source_image")
     rights_confirmed = False
@@ -241,7 +247,7 @@ def validate_asset_manifest(
             if not isinstance(part, Mapping):
                 errors.append(ManifestIssue(base, "must be a mapping"))
                 continue
-            required_fields = (
+            required_fields = [
                 "layer_id",
                 "layer_name",
                 "role",
@@ -255,7 +261,16 @@ def validate_asset_manifest(
                 "review_required",
                 "readiness",
                 "include_in_import",
-            )
+            ]
+            if queue_schema_version == 3:
+                required_fields.extend(
+                    [
+                        "target_mask",
+                        "protect_mask",
+                        "edge_extension_mask",
+                        "inpaint_mask",
+                    ]
+                )
             for field in required_fields:
                 if field not in part:
                     errors.append(ManifestIssue(f"{base}.{field}", "is required"))
@@ -283,6 +298,28 @@ def validate_asset_manifest(
                         f"must be one of {sorted(GENERATION_METHODS)}",
                     )
                 )
+            if queue_schema_version == 3:
+                for mask_field in (
+                    "target_mask",
+                    "protect_mask",
+                    "edge_extension_mask",
+                    "inpaint_mask",
+                ):
+                    mask_value = part.get(mask_field)
+                    if (
+                        not isinstance(mask_value, str)
+                        or Path(mask_value).suffix.lower() != ".png"
+                    ):
+                        errors.append(
+                            ManifestIssue(f"{base}.{mask_field}", "must reference a .png mask")
+                        )
+                if part.get("edge_extension_mask") == part.get("inpaint_mask"):
+                    errors.append(
+                        ManifestIssue(
+                            f"{base}.edge_extension_mask",
+                            "must differ from inpaint_mask",
+                        )
+                    )
             order = part.get("order")
             if isinstance(order, int) and not isinstance(order, bool) and order > 0:
                 layer_orders.append(order)

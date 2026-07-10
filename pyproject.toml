@@ -51,8 +51,11 @@ validate-action-plan = "scripts.validate_action_plan:main"
 packages = ["tools", "scripts"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -m 'not benchmark'"
 testpaths = ["tests"]
+markers = [
+  "benchmark: opt-in wall-clock performance checks for 2048x2048 image processing",
+]
 
 [tool.ruff]
 line-length = 100

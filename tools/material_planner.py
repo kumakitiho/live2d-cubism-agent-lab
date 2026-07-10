@@ -259,6 +259,7 @@ def _serialize_part(part: PartTemplate, index: int) -> dict[str, Any]:
         "source_file": f"generated/parts/{layer_id}.png",
         "target_mask": f"generated/masks/{layer_id}.target.png",
         "protect_mask": f"generated/masks/{layer_id}.protect.png",
+        "edge_extension_mask": f"generated/masks/{layer_id}.edge-extension.png",
         "inpaint_mask": f"generated/masks/{layer_id}.inpaint.png",
         "overlap_margin_px": part.overlap_margin_px,
         "prompt_id": f"part-{layer_id}",

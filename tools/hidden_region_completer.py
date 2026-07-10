@@ -27,12 +27,30 @@ def extract_and_edge_repair(
     part: Image.Image,
     target_mask: Image.Image,
     protect_mask: Image.Image,
+    *,
+    edge_extension_mask: Image.Image | None = None,
+    source_image: Image.Image | None = None,
 ) -> Image.Image:
     rgba = part.convert("RGBA")
     target = target_mask.convert("L")
     protect = protect_mask.convert("L")
-    if rgba.size != target.size or rgba.size != protect.size:
+    edge_extension = (
+        edge_extension_mask.convert("L")
+        if edge_extension_mask is not None
+        else Image.new("L", rgba.size, 0)
+    )
+    if rgba.size != target.size or rgba.size != protect.size or rgba.size != edge_extension.size:
         raise ValueError("part and masks must use the same canvas")
+
+    if source_image is not None:
+        source_rgba = source_image.convert("RGBA")
+        if source_rgba.size != rgba.size:
+            raise ValueError("source image and part must use the same canvas")
+        extension_alpha = ImageChops.multiply(source_rgba.getchannel("A"), edge_extension)
+        extension_alpha = ImageChops.subtract(extension_alpha, protect)
+        extension = source_rgba.copy()
+        extension.putalpha(extension_alpha)
+        rgba = Image.alpha_composite(rgba, extension)
 
     binary_target = target.point(lambda value: 255 if value > 0 else 0, mode="L")
     boundary = ImageChops.subtract(binary_target, binary_target.filter(ImageFilter.MinFilter(3)))
@@ -40,7 +58,10 @@ def extract_and_edge_repair(
         lambda value: 255 if 0 < value < 255 else 0,
         mode="L",
     )
-    repair_region = ImageChops.subtract(ImageChops.lighter(boundary, antialiased), protect)
+    repair_region = ImageChops.subtract(
+        _lighter_many(boundary, antialiased, edge_extension),
+        protect,
+    )
     bounds = repair_region.getbbox()
     if bounds is None:
         return rgba.copy()
@@ -72,6 +93,13 @@ def extract_and_edge_repair(
                     sum(candidate[2] for candidate in neighbors) // count,
                     alpha,
                 )
+    return result
+
+
+def _lighter_many(first: Image.Image, *rest: Image.Image) -> Image.Image:
+    result = first
+    for image in rest:
+        result = ImageChops.lighter(result, image)
     return result
 
 
@@ -154,13 +182,19 @@ def main(argv: list[str] | None = None) -> int:
         part = find_part(manifest, args.part)
         method = part.get("generation_method")
         input_value = part.get("output_file")
+        source_value = part.get("source_file")
         target_value = part.get("target_mask")
+        edge_extension_value = part.get("edge_extension_mask")
         inpaint_value = part.get("inpaint_mask")
         protect_value = part.get("protect_mask")
         output_value = str(args.output) if args.output is not None else input_value
         if not isinstance(input_value, str) or not input_value:
             raise ValueError("part output_file, inpaint_mask, and protect_mask are required")
+        if not isinstance(source_value, str) or not source_value:
+            raise ValueError("part source_file is required")
         if not isinstance(target_value, str) or not target_value:
+            raise ValueError("part output_file and all masks are required")
+        if not isinstance(edge_extension_value, str) or not edge_extension_value:
             raise ValueError("part output_file and all masks are required")
         if not isinstance(inpaint_value, str) or not inpaint_value:
             raise ValueError("part output_file and all masks are required")
@@ -169,7 +203,13 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(output_value, str) or not output_value:
             raise ValueError("part output_file, inpaint_mask, and protect_mask are required")
         input_path = resolve_inside_base(base_dir, input_value, "part input")
+        source_path = resolve_inside_base(base_dir, source_value, "source image")
         target_path = resolve_inside_base(base_dir, target_value, "target_mask")
+        edge_extension_path = resolve_inside_base(
+            base_dir,
+            edge_extension_value,
+            "edge_extension_mask",
+        )
         inpaint_path = resolve_inside_base(base_dir, inpaint_value, "inpaint_mask")
         protect_path = resolve_inside_base(base_dir, protect_value, "protect_mask")
         output_path = resolve_inside_base(base_dir, output_value, "output")
@@ -198,7 +238,16 @@ def main(argv: list[str] | None = None) -> int:
             protect_mask = load_binary_mask(protect_path, image.size)
             if method == "extract_and_edge_repair":
                 target_mask = load_soft_mask(target_path, image.size)
-                completed = extract_and_edge_repair(image, target_mask, protect_mask)
+                edge_extension_mask = load_binary_mask(edge_extension_path, image.size)
+                source_image = load_rgba(source_path)
+                require_manifest_canvas(source_image, manifest, "source image")
+                completed = extract_and_edge_repair(
+                    image,
+                    target_mask,
+                    protect_mask,
+                    edge_extension_mask=edge_extension_mask,
+                    source_image=source_image,
+                )
             else:
                 inpaint_mask = load_binary_mask(inpaint_path, image.size)
                 completed = transparency_fill(

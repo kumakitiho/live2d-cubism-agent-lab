@@ -230,6 +230,27 @@ def test_v3_job_operations_include_target_generation_method() -> None:
     assert any("must include target generation method" in issue.message for issue in report.issues)
 
 
+def test_v3_queue_requires_edge_extension_mask_separate_from_inpaint_mask() -> None:
+    data = deepcopy(_sample())
+    data["assets"][0].pop("edge_extension_mask")
+
+    report = validate_asset_generation_queue(data)
+
+    assert not report.valid
+    assert any(issue.path.endswith("edge_extension_mask") for issue in report.issues)
+
+
+def test_v3_queue_rejects_shared_edge_extension_and_inpaint_path() -> None:
+    data = deepcopy(_sample())
+    asset = data["assets"][0]
+    asset["edge_extension_mask"] = asset["inpaint_mask"]
+
+    report = validate_asset_generation_queue(data)
+
+    assert not report.valid
+    assert any("must differ from inpaint_mask" in issue.message for issue in report.issues)
+
+
 def test_legacy_v2_queue_remains_readable() -> None:
     data = deepcopy(_sample())
     data["schema_version"] = 2
@@ -237,6 +258,7 @@ def test_legacy_v2_queue_remains_readable() -> None:
     for asset in data["assets"]:
         asset["mask_file"] = asset.pop("target_mask")
         asset.pop("protect_mask")
+        asset.pop("edge_extension_mask")
         asset.pop("inpaint_mask")
         asset["order"] = asset.pop("draw_order")
         asset.pop("dependencies")

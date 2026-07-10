@@ -10,7 +10,9 @@
 
 source画素を保持する優先順位は `extract > extract_and_edge_repair > transparency_fill > inpaint > redraw` とする。品質gateで失敗したpartだけを次の方式へ進め、合格partをまとめて再生成しない。
 
-non-zero `overlap_margin_px` はtarget maskの自動膨張を意味しない。desired coverageはbinary target maskと明示的なinpaint/edge-extension maskの和集合とし、extensionが空なら初回extractをoverlap不足だけでfailにしない。plannerはnon-zero overlapの可視partを `extract_and_edge_repair` から開始する。
+protect領域の差分は通常の前進transitionで修復せず、sourceから `extract` をやり直す。生成inpaintingやredrawでpreserve違反を隠さない。
+
+non-zero `overlap_margin_px` はtarget maskの自動膨張を意味しない。desired coverageはbinary target maskと明示的な `edge_extension_mask` の和集合とする。`inpaint_mask` は生成inpaintingが変更できる隠れ領域であり、overlap coverageへ流用しない。extensionが空なら初回extractをoverlap不足だけでfailにしない。plannerはnon-zero overlapの可視partを `extract_and_edge_repair` から開始する。
 
 `draw_order` は背面から前面への順序で、小さい値を先に、大きい値を上へ合成する。hidden fillは対応するvisible baseより小さく、back hairはface・eyes・front hairより小さくする。
 

@@ -27,7 +27,9 @@ def next_generation_method(current: str) -> str:
 
 FAILED_CHECK_METHOD_HINTS = {
     "white_halo_px": "extract_and_edge_repair",
-    "source_pixel_difference": "extract_and_edge_repair",
+    "preserve_region_difference_score": "extract",
+    "allowed_change_region_difference_score": "transparency_fill",
+    "visual_reconstruction_difference_score": "transparency_fill",
     "transparent_hole_px": "transparency_fill",
     "overlap_deficit_px": "transparency_fill",
 }
@@ -36,6 +38,8 @@ FAILED_CHECK_METHOD_HINTS = {
 def select_generation_method(current: str, failed_checks: list[str]) -> str:
     if current not in GENERATION_METHODS:
         raise ValueError(f"unknown generation method: {current}")
+    if "preserve_region_difference_score" in failed_checks:
+        return "extract"
     current_index = GENERATION_METHODS.index(current)
     hinted_methods = {
         FAILED_CHECK_METHOD_HINTS[check]
@@ -132,7 +136,11 @@ def build_refinement_plan(
                 "to_generation_method": select_generation_method(current, failed_checks),
                 "refinement_attempt": attempts + 1,
                 "failed_checks": failed_checks,
-                "requested_action": "regenerate_failed_part_only",
+                "requested_action": (
+                    "reset_from_source_and_reextract"
+                    if "preserve_region_difference_score" in failed_checks
+                    else "regenerate_failed_part_only"
+                ),
             }
         )
     return {

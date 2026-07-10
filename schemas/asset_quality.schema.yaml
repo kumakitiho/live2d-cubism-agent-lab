@@ -14,7 +14,7 @@ required:
   - summary
 properties:
   schema_version:
-    const: 1
+    const: 2
   project: {type: string, minLength: 1}
   derived_from:
     type: object
@@ -31,10 +31,18 @@ properties:
     items:
       type: object
       additionalProperties: false
-      required: [layer_id, quality_status, metrics, failed_checks]
+      required: [layer_id, quality_status, allowed_change_region, metrics, failed_checks]
       properties:
         layer_id: {type: string, minLength: 1}
         quality_status: {enum: [pass, fail]}
+        allowed_change_region:
+          type: object
+          additionalProperties: false
+          required: [edge_extension_mask, inpaint_mask, pixel_count]
+          properties:
+            edge_extension_mask: {type: string, minLength: 1}
+            inpaint_mask: {type: string, minLength: 1}
+            pixel_count: {type: integer, minimum: 0}
         metrics:
           type: object
           additionalProperties: false
@@ -42,12 +50,16 @@ properties:
             - white_halo_px
             - transparent_hole_px
             - overlap_deficit_px
-            - difference_score
+            - preserve_region_difference_score
+            - allowed_change_region_difference_score
+            - visual_reconstruction_difference_score
           properties:
             white_halo_px: {type: integer, minimum: 0}
             transparent_hole_px: {type: integer, minimum: 0}
             overlap_deficit_px: {type: integer, minimum: 0}
-            difference_score: {type: number, minimum: 0, maximum: 1}
+            preserve_region_difference_score: {type: number, minimum: 0, maximum: 1}
+            allowed_change_region_difference_score: {type: number, minimum: 0, maximum: 1}
+            visual_reconstruction_difference_score: {type: number, minimum: 0, maximum: 1}
         failed_checks:
           type: array
           uniqueItems: true
@@ -56,19 +68,32 @@ properties:
               - white_halo_px
               - transparent_hole_px
               - overlap_deficit_px
-              - source_pixel_difference
+              - preserve_region_difference_score
+              - allowed_change_region_difference_score
+              - visual_reconstruction_difference_score
   thresholds:
     type: object
     additionalProperties: false
-    required: [max_global_difference_score]
+    required:
+      - max_white_halo_px
+      - max_transparent_hole_px
+      - max_overlap_deficit_px
+      - max_preserve_region_difference_score
+      - max_allowed_change_region_difference_score
+      - max_visual_reconstruction_difference_score
     properties:
-      max_global_difference_score: {type: number, minimum: 0, maximum: 1}
+      max_white_halo_px: {type: integer, minimum: 0}
+      max_transparent_hole_px: {type: integer, minimum: 0}
+      max_overlap_deficit_px: {type: integer, minimum: 0}
+      max_preserve_region_difference_score: {const: 0}
+      max_allowed_change_region_difference_score: {type: number, minimum: 0, maximum: 1}
+      max_visual_reconstruction_difference_score: {type: number, minimum: 0, maximum: 1}
   summary:
     type: object
     additionalProperties: false
-    required: [total_parts, failed_parts, result, global_difference_score]
+    required: [total_parts, failed_parts, result, visual_reconstruction_difference_score]
     properties:
       total_parts: {type: integer, minimum: 0}
       failed_parts: {type: integer, minimum: 0}
       result: {enum: [pass, fail]}
-      global_difference_score: {type: number, minimum: 0, maximum: 1}
+      visual_reconstruction_difference_score: {type: number, minimum: 0, maximum: 1}

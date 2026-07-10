@@ -209,6 +209,7 @@ def validate_asset_generation_queue(
                     [
                         "target_mask",
                         "protect_mask",
+                        "edge_extension_mask",
                         "inpaint_mask",
                         "dependencies",
                         "draw_order",
@@ -235,10 +236,21 @@ def validate_asset_generation_queue(
                 issues.append(ArtifactIssue(f"{base}.layer_path", "must be a non-empty string"))
             string_fields = ["layer_name", "source_file"]
             if schema_version == 3:
-                string_fields.extend(["target_mask", "protect_mask", "inpaint_mask"])
+                string_fields.extend(
+                    ["target_mask", "protect_mask", "edge_extension_mask", "inpaint_mask"]
+                )
             for key in string_fields:
                 if not isinstance(asset.get(key), str) or not str(asset.get(key, "")).strip():
                     issues.append(ArtifactIssue(f"{base}.{key}", "must be a non-empty string"))
+            if schema_version == 3 and asset.get("edge_extension_mask") == asset.get(
+                "inpaint_mask"
+            ):
+                issues.append(
+                    ArtifactIssue(
+                        f"{base}.edge_extension_mask",
+                        "must differ from inpaint_mask",
+                    )
+                )
             allowed_generation_methods = set(GENERATION_METHODS)
             if schema_version == 2:
                 allowed_generation_methods.add("mask_extract")

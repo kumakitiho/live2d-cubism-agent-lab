@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
-from time import perf_counter
 from typing import Any
 
 import yaml
@@ -19,11 +18,14 @@ from tools.asset_pipeline_common import (
     validate_mask_manifest,
 )
 from tools.asset_quality_evaluator import (
+    allowed_change_region_mask,
     count_overlap_deficit,
     count_transparent_holes,
     count_white_halo,
     difference_score,
     evaluate_part,
+    foreground_reconstruction_mask,
+    premultiplied_difference_image,
 )
 from tools.asset_queue_builder import derive_asset_manifest
 from tools.asset_recomposer import difference_image, recompose_parts
@@ -114,6 +116,117 @@ def test_recompose_uses_draw_order_and_difference_image() -> None:
     assert difference_score(result, changed) > 0.0
 
 
+def test_premultiplied_comparison_ignores_rgb_of_fully_transparent_pixels() -> None:
+    reference = Image.new("RGBA", (2, 1), (255, 0, 0, 0))
+    candidate = Image.new("RGBA", (2, 1), (0, 255, 255, 0))
+
+    assert difference_score(reference, candidate) == 0.0
+    assert premultiplied_difference_image(reference, candidate).getbbox() is None
+
+
+def test_foreground_reconstruction_mask_excludes_unmodeled_background() -> None:
+    source = Image.new("RGBA", (3, 1), (20, 30, 40, 255))
+    reconstructed = Image.new("RGBA", source.size, (0, 0, 0, 0))
+    reconstructed.putpixel((1, 0), source.getpixel((1, 0)))
+    target = _mask(source.size, {(1, 0)})
+
+    foreground = foreground_reconstruction_mask([target], reconstructed)
+
+    assert list(foreground.tobytes()) == [0, 255, 0]
+    assert difference_score(source, reconstructed, foreground) == 0.0
+
+
+def test_foreground_reconstruction_mask_detects_opaque_stray_pixels() -> None:
+    source = Image.new("RGBA", (3, 1), (0, 0, 0, 0))
+    source.putpixel((1, 0), (20, 30, 40, 255))
+    reconstructed = source.copy()
+    reconstructed.putpixel((0, 0), (200, 100, 50, 255))
+    target = _mask(source.size, {(1, 0)})
+
+    foreground = foreground_reconstruction_mask([target], reconstructed)
+
+    assert list(foreground.tobytes()) == [255, 255, 0]
+    assert difference_score(source, reconstructed, foreground) > 0.0
+
+
+def test_allowed_change_region_is_separate_from_preserve_region() -> None:
+    source = Image.new("RGBA", (3, 1), (0, 0, 0, 0))
+    source.putpixel((1, 0), (20, 40, 60, 255))
+    part = source.copy()
+    part.putpixel((2, 0), (80, 120, 160, 255))
+    target = _mask(source.size, {(1, 0)})
+    protect = target.copy()
+    edge_extension = Image.new("L", source.size, 0)
+    inpaint = _mask(source.size, {(2, 0)})
+
+    result = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=protect,
+        edge_extension_mask=edge_extension,
+        inpaint_mask=inpaint,
+        reconstructed=source,
+        thresholds={"max_allowed_change_region_difference_score": 1.0},
+    )
+
+    assert result["metrics"]["preserve_region_difference_score"] == 0.0
+    assert result["metrics"]["allowed_change_region_difference_score"] > 0.0
+    assert result["quality_status"] == "pass"
+    assert result["failed_checks"] == []
+
+    strict = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=protect,
+        edge_extension_mask=edge_extension,
+        inpaint_mask=inpaint,
+        reconstructed=source,
+        thresholds={"max_allowed_change_region_difference_score": 0.0},
+    )
+    assert "allowed_change_region_difference_score" in strict["failed_checks"]
+
+
+def test_allowed_change_region_excludes_protected_pixels() -> None:
+    edge_extension = _mask((3, 1), {(0, 0), (1, 0)})
+    inpaint = _mask((3, 1), {(2, 0)})
+    protect = _mask((3, 1), {(1, 0)})
+
+    allowed = allowed_change_region_mask(
+        edge_extension,
+        inpaint,
+        protect_mask=protect,
+    )
+
+    assert list(allowed.tobytes()) == [255, 0, 255]
+
+
+def test_visual_reconstruction_difference_is_attributed_to_the_part() -> None:
+    source = Image.new("RGBA", (2, 1), (0, 0, 0, 0))
+    source.putpixel((1, 0), (40, 80, 120, 255))
+    part = source.copy()
+    reconstructed = source.copy()
+    reconstructed.putpixel((1, 0), (120, 80, 40, 255))
+    target = _mask(source.size, {(1, 0)})
+
+    result = evaluate_part(
+        part,
+        source,
+        target,
+        overlap_margin_px=0,
+        protect_mask=target,
+        reconstructed=reconstructed,
+        thresholds={"max_visual_reconstruction_difference_score": 0.0},
+    )
+
+    assert result["metrics"]["preserve_region_difference_score"] == 0.0
+    assert result["metrics"]["visual_reconstruction_difference_score"] > 0.0
+    assert result["failed_checks"] == ["visual_reconstruction_difference_score"]
+
+
 def test_quality_checks_detect_halo_holes_and_overlap_deficit() -> None:
     source = Image.new("RGBA", (5, 5), (180, 20, 20, 255))
     target = _mask((5, 5), {(2, 2), (3, 2)})
@@ -138,13 +251,13 @@ def test_non_zero_overlap_uses_explicit_extension_mask() -> None:
         complete,
         target,
         3,
-        inpaint_mask=extension,
+        edge_extension_mask=extension,
     ) == 0
     assert count_overlap_deficit(
         incomplete,
         target,
         3,
-        inpaint_mask=extension,
+        edge_extension_mask=extension,
     ) == 1
 
 
@@ -163,7 +276,26 @@ def test_quality_gate_detects_modified_protected_source_pixel() -> None:
     )
 
     assert result["quality_status"] == "fail"
-    assert "source_pixel_difference" in result["failed_checks"]
+    assert "preserve_region_difference_score" in result["failed_checks"]
+
+
+def test_preserve_region_detects_sparse_one_lsb_difference_without_rounding() -> None:
+    size = (512, 512)
+    source = Image.new("RGBA", size, (20, 40, 60, 255))
+    part = source.copy()
+    part.putpixel((256, 256), (21, 40, 60, 255))
+    protect = Image.new("L", size, 255)
+
+    result = evaluate_part(
+        part,
+        source,
+        protect,
+        overlap_margin_px=0,
+        protect_mask=protect,
+    )
+
+    assert result["metrics"]["preserve_region_difference_score"] > 0.0
+    assert "preserve_region_difference_score" in result["failed_checks"]
 
 
 def test_transparency_fill_respects_protect_mask() -> None:
@@ -194,38 +326,50 @@ def test_edge_repair_changes_only_antialiased_fringe_rgb() -> None:
     assert result.getpixel((2, 0)) == part.getpixel((2, 0))
 
 
-def test_transparency_fill_2048_canvas_stays_bounded() -> None:
-    size = (2048, 2048)
+def test_edge_repair_extracts_source_pixels_for_extension_coverage() -> None:
+    source = Image.new("RGBA", (3, 1), (40, 80, 120, 255))
+    part = Image.new("RGBA", source.size, (0, 0, 0, 0))
+    part.putpixel((1, 0), source.getpixel((1, 0)))
+    target = _mask(source.size, {(1, 0)})
+    protect = target.copy()
+    edge_extension = _mask(source.size, {(0, 0), (2, 0)})
+
+    result = extract_and_edge_repair(
+        part,
+        target,
+        protect,
+        edge_extension_mask=edge_extension,
+        source_image=source,
+    )
+
+    assert result.getpixel((0, 0)) == source.getpixel((0, 0))
+    assert result.getpixel((2, 0)) == source.getpixel((2, 0))
+    assert count_overlap_deficit(
+        result,
+        target,
+        2,
+        edge_extension_mask=edge_extension,
+    ) == 0
+
+
+def test_transparency_fill_changes_only_the_inpaint_bounding_box() -> None:
+    size = (32, 32)
     part = Image.new("RGBA", size, (0, 0, 0, 0))
-    part.putpixel((1023, 1024), (40, 80, 120, 255))
+    part.putpixel((15, 16), (40, 80, 120, 255))
+    part.putpixel((0, 0), (5, 10, 15, 255))
     inpaint = Image.new("L", size, 0)
-    for y in range(1016, 1032):
-        for x in range(1024, 1040):
+    for y in range(14, 19):
+        for x in range(16, 21):
             inpaint.putpixel((x, y), 255)
     protect = Image.new("L", size, 0)
 
-    started = perf_counter()
     result = transparency_fill(part, inpaint, protect, iterations=1)
-    elapsed = perf_counter() - started
 
-    assert result.getpixel((1024, 1024))[3] == 255
-    assert elapsed < 3.0
-
-
-def test_white_halo_quality_2048_canvas_uses_bounded_image_operations() -> None:
-    size = (2048, 2048)
-    source = Image.new("RGBA", size, (0, 0, 0, 255))
-    part = Image.new("RGBA", size, (255, 255, 255, 0))
-    alpha = Image.new("L", size, 0)
-    alpha.paste(255, (1, 1, 2047, 2047))
-    part.putalpha(alpha)
-
-    started = perf_counter()
-    results = [count_white_halo(part, source) for _ in range(4)]
-    elapsed = perf_counter() - started
-
-    assert results == [8180] * 4
-    assert elapsed < 3.0
+    assert result.getpixel((16, 16))[3] == 255
+    assert result.crop((0, 0, 32, 14)).tobytes() == part.crop((0, 0, 32, 14)).tobytes()
+    assert result.crop((0, 19, 32, 32)).tobytes() == part.crop((0, 19, 32, 32)).tobytes()
+    assert result.crop((0, 14, 16, 19)).tobytes() == part.crop((0, 14, 16, 19)).tobytes()
+    assert result.crop((21, 14, 32, 19)).tobytes() == part.crop((21, 14, 32, 19)).tobytes()
 
 
 def test_motion_stress_preview_moves_part_without_changing_canvas_origin() -> None:
@@ -274,9 +418,10 @@ def test_refinement_plan_requeues_failed_part_only() -> None:
     assert [job["layer_id"] for job in plan["jobs"]] == ["eye_white_L"]
     before = {asset["layer_id"]: asset for asset in original["assets"]}
     after = {asset["layer_id"]: asset for asset in refined["assets"]}
-    assert after["eye_white_L"]["generation_method"] == "transparency_fill"
+    assert after["eye_white_L"]["generation_method"] == "extract"
     assert after["eye_white_L"]["refinement_attempts"] == 1
     assert after["eye_white_R"] == before["eye_white_R"]
+    assert plan["jobs"][0]["requested_action"] == "reset_from_source_and_reextract"
 
 
 def test_refinement_uses_source_preserving_generation_priority() -> None:
@@ -294,7 +439,13 @@ def _set_failed_check(quality: dict[str, Any], layer_id: str, check: str) -> Non
         "white_halo_px": "white_halo_px",
         "transparent_hole_px": "transparent_hole_px",
         "overlap_deficit_px": "overlap_deficit_px",
-        "source_pixel_difference": "difference_score",
+        "preserve_region_difference_score": "preserve_region_difference_score",
+        "allowed_change_region_difference_score": (
+            "allowed_change_region_difference_score"
+        ),
+        "visual_reconstruction_difference_score": (
+            "visual_reconstruction_difference_score"
+        ),
     }
     for part in quality["parts"]:
         for metric in part["metrics"]:
@@ -446,12 +597,15 @@ def test_pipeline_samples_and_schemas_are_loadable_and_valid() -> None:
 
     assert validate_mask_manifest(mask_manifest) == []
     assert validate_asset_quality(asset_quality) == []
+    assert mask_manifest["schema_version"] == 2
+    assert asset_quality["schema_version"] == 2
     for path in (
         Path("schemas/mask_manifest.schema.yaml"),
         Path("schemas/asset_quality.schema.yaml"),
     ):
         data: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert data["$schema"].startswith("https://json-schema.org/")
+        assert data["properties"]["schema_version"]["const"] == 2
 
 
 def test_mask_manifest_requires_queue_provenance() -> None:
@@ -461,6 +615,24 @@ def test_mask_manifest_requires_queue_provenance() -> None:
     issues = validate_mask_manifest(manifest)
 
     assert any(issue.path == "derived_from" for issue in issues)
+
+
+def test_mask_manifest_requires_edge_extension_mask() -> None:
+    manifest = load_yaml_mapping(Path("examples/mask_manifest.sample.yaml"))
+    manifest["parts"][0].pop("edge_extension_mask")
+
+    issues = validate_mask_manifest(manifest)
+
+    assert any(issue.path.endswith("edge_extension_mask") for issue in issues)
+
+
+def test_mask_manifest_rejects_shared_edge_extension_and_inpaint_path() -> None:
+    manifest = load_yaml_mapping(Path("examples/mask_manifest.sample.yaml"))
+    manifest["parts"][0]["edge_extension_mask"] = manifest["parts"][0]["inpaint_mask"]
+
+    issues = validate_mask_manifest(manifest)
+
+    assert any("must differ from inpaint_mask" in issue.message for issue in issues)
 
 
 def test_checked_in_mask_manifest_is_exact_queue_derivative() -> None:
@@ -494,7 +666,7 @@ def test_queue_derived_mask_manifest_drift_is_rejected(tmp_path: Path) -> None:
         raise AssertionError("queue-derived mask manifest drift must be rejected")
 
 
-def test_global_reconstruction_difference_is_a_quality_failure() -> None:
+def test_visual_reconstruction_difference_uses_configurable_threshold() -> None:
     quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
     for part in quality["parts"]:
         part["quality_status"] = "pass"
@@ -502,18 +674,47 @@ def test_global_reconstruction_difference_is_a_quality_failure() -> None:
         for key in part["metrics"]:
             part["metrics"][key] = 0
     quality["summary"]["failed_parts"] = 0
-    quality["summary"]["global_difference_score"] = 0.1
+    quality["summary"]["visual_reconstruction_difference_score"] = 0.1
     quality["summary"]["result"] = "fail"
 
+    assert validate_asset_quality(quality) == []
+
+    quality["thresholds"]["max_visual_reconstruction_difference_score"] = 0.2
+    quality["summary"]["result"] = "pass"
     assert validate_asset_quality(quality) == []
 
 
 def test_quality_status_and_failed_checks_must_match_metrics() -> None:
     quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
     quality["parts"][0]["quality_status"] = "pass"
-    quality["parts"][0]["failed_checks"].remove("source_pixel_difference")
+    quality["parts"][0]["failed_checks"].remove("preserve_region_difference_score")
 
     issues = validate_asset_quality(quality)
 
     assert any("must exactly match" in issue.message for issue in issues)
     assert any("must equal fail" in issue.message for issue in issues)
+
+
+def test_preserve_region_threshold_must_remain_zero() -> None:
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    quality["thresholds"]["max_preserve_region_difference_score"] = 0.01
+
+    issues = validate_asset_quality(quality)
+
+    assert any(
+        issue.path == "thresholds.max_preserve_region_difference_score"
+        and "must equal 0" in issue.message
+        for issue in issues
+    )
+
+
+def test_legacy_global_threshold_field_is_rejected() -> None:
+    quality = load_yaml_mapping(Path("examples/asset_quality.sample.yaml"))
+    quality["thresholds"]["max_global_difference_score"] = 0.0
+
+    issues = validate_asset_quality(quality)
+
+    assert any(
+        issue.path == "thresholds" and "max_global_difference_score" in issue.message
+        for issue in issues
+    )

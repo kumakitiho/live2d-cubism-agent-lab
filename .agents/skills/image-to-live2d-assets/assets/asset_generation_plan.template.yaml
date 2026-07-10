@@ -17,6 +17,7 @@ parts:
     source_file: generated/parts/face_base.png
     target_mask: generated/masks/face_base.target.png
     protect_mask: generated/masks/face_base.protect.png
+    edge_extension_mask: generated/masks/face_base.edge-extension.png
     inpaint_mask: generated/masks/face_base.inpaint.png
     overlap_margin_px: 2
     prompt_id: part-face_base

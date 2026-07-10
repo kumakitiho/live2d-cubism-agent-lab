@@ -5,7 +5,7 @@ additionalProperties: false
 required: [schema_version, project, derived_from, source_image, canvas, parts]
 properties:
   schema_version:
-    const: 1
+    const: 2
   project:
     type: string
     minLength: 1
@@ -41,6 +41,7 @@ properties:
         - layer_id
         - target_mask
         - protect_mask
+        - edge_extension_mask
         - inpaint_mask
         - source_file
         - output_file
@@ -55,6 +56,7 @@ properties:
         layer_id: {type: string, minLength: 1}
         target_mask: {type: string, minLength: 1}
         protect_mask: {type: string, minLength: 1}
+        edge_extension_mask: {type: string, minLength: 1}
         inpaint_mask: {type: string, minLength: 1}
         source_file: {type: string, minLength: 1}
         output_file: {type: string, minLength: 1}

@@ -29,6 +29,7 @@ MANIFEST_PART_FIELDS = (
     "include_in_import",
     "target_mask",
     "protect_mask",
+    "edge_extension_mask",
     "inpaint_mask",
     "dependencies",
     "draw_order",

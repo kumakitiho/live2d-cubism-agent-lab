@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 project: sample-one-image-model
 derived_from:
   asset_generation_queue: examples/asset_generation_queue.sample.yaml
@@ -15,6 +15,7 @@ parts:
 - layer_id: hair_back
   target_mask: generated/masks/hair_back.target.png
   protect_mask: generated/masks/hair_back.protect.png
+  edge_extension_mask: generated/masks/hair_back.edge-extension.png
   inpaint_mask: generated/masks/hair_back.inpaint.png
   source_file: assets/source/character.png
   output_file: generated/parts/hair_back.png
@@ -28,6 +29,7 @@ parts:
 - layer_id: torso_base
   target_mask: generated/masks/torso_base.target.png
   protect_mask: generated/masks/torso_base.protect.png
+  edge_extension_mask: generated/masks/torso_base.edge-extension.png
   inpaint_mask: generated/masks/torso_base.inpaint.png
   source_file: assets/source/character.png
   output_file: generated/parts/torso_base.png
@@ -41,6 +43,7 @@ parts:
 - layer_id: face_hidden_fill
   target_mask: generated/masks/face_hidden_fill.target.png
   protect_mask: generated/masks/face_hidden_fill.protect.png
+  edge_extension_mask: generated/masks/face_hidden_fill.edge-extension.png
   inpaint_mask: generated/masks/face_hidden_fill.inpaint.png
   source_file: assets/source/character.png
   output_file: generated/parts/face_hidden_fill.png
@@ -54,6 +57,7 @@ parts:
 - layer_id: mouth_inner
   target_mask: generated/masks/mouth_inner.target.png
   protect_mask: generated/masks/mouth_inner.protect.png
+  edge_extension_mask: generated/masks/mouth_inner.edge-extension.png
   inpaint_mask: generated/masks/mouth_inner.inpaint.png
   source_file: assets/source/character.png
   output_file: generated/parts/mouth_inner.png
@@ -67,6 +71,7 @@ parts:
 - layer_id: eye_white_L
   target_mask: generated/masks/eye_white_L.target.png
   protect_mask: generated/masks/eye_white_L.protect.png
+  edge_extension_mask: generated/masks/eye_white_L.edge-extension.png
   inpaint_mask: generated/masks/eye_white_L.inpaint.png
   source_file: assets/source/character.png
   output_file: generated/parts/eye_white_L.png
@@ -80,6 +85,7 @@ parts:
 - layer_id: eye_white_R
   target_mask: generated/masks/eye_white_R.target.png
   protect_mask: generated/masks/eye_white_R.protect.png
+  edge_extension_mask: generated/masks/eye_white_R.edge-extension.png
   inpaint_mask: generated/masks/eye_white_R.inpaint.png
   source_file: assets/source/character.png
   output_file: generated/parts/eye_white_R.png

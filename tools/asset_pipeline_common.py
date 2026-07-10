@@ -23,7 +23,9 @@ QUALITY_CHECKS = {
     "white_halo_px",
     "transparent_hole_px",
     "overlap_deficit_px",
-    "source_pixel_difference",
+    "preserve_region_difference_score",
+    "allowed_change_region_difference_score",
+    "visual_reconstruction_difference_score",
 }
 
 ARTIFACT_PATH_FIELDS = (
@@ -31,6 +33,7 @@ ARTIFACT_PATH_FIELDS = (
     "output_file",
     "target_mask",
     "protect_mask",
+    "edge_extension_mask",
     "inpaint_mask",
 )
 
@@ -298,8 +301,8 @@ def validate_mask_manifest(data: Mapping[str, Any]) -> list[ArtifactIssue]:
     ):
         if key not in data:
             issues.append(ArtifactIssue(key, "is required"))
-    if data.get("schema_version") != 1:
-        issues.append(ArtifactIssue("schema_version", "must equal 1"))
+    if data.get("schema_version") != 2:
+        issues.append(ArtifactIssue("schema_version", "must equal 2"))
     if not isinstance(data.get("project"), str) or not str(data.get("project", "")).strip():
         issues.append(ArtifactIssue("project", "must be a non-empty string"))
     derived_from = data.get("derived_from")
@@ -343,6 +346,7 @@ def validate_mask_manifest(data: Mapping[str, Any]) -> list[ArtifactIssue]:
         "layer_id",
         "target_mask",
         "protect_mask",
+        "edge_extension_mask",
         "inpaint_mask",
         "source_file",
         "output_file",
@@ -369,9 +373,23 @@ def validate_mask_manifest(data: Mapping[str, Any]) -> list[ArtifactIssue]:
         if layer_id in layer_ids:
             issues.append(ArtifactIssue(f"{base}.layer_id", f"duplicate id: {layer_id}"))
         layer_ids.add(layer_id)
-        for key in ("target_mask", "protect_mask", "inpaint_mask", "source_file", "output_file"):
+        for key in (
+            "target_mask",
+            "protect_mask",
+            "edge_extension_mask",
+            "inpaint_mask",
+            "source_file",
+            "output_file",
+        ):
             if not isinstance(part.get(key), str) or not str(part.get(key, "")).strip():
                 issues.append(ArtifactIssue(f"{base}.{key}", "must be a non-empty string"))
+        if part.get("edge_extension_mask") == part.get("inpaint_mask"):
+            issues.append(
+                ArtifactIssue(
+                    f"{base}.edge_extension_mask",
+                    "must differ from inpaint_mask",
+                )
+            )
         if part.get("generation_method") not in GENERATION_METHODS:
             issues.append(
                 ArtifactIssue(
@@ -418,7 +436,7 @@ def validate_mask_manifest(data: Mapping[str, Any]) -> list[ArtifactIssue]:
 
 def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
     issues: list[ArtifactIssue] = []
-    for key in (
+    required_root = (
         "schema_version",
         "project",
         "derived_from",
@@ -428,49 +446,96 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
         "parts",
         "thresholds",
         "summary",
-    ):
+    )
+    for key in required_root:
         if key not in data:
             issues.append(ArtifactIssue(key, "is required"))
-    if data.get("schema_version") != 1:
-        issues.append(ArtifactIssue("schema_version", "must equal 1"))
+    if data.get("schema_version") != 2:
+        issues.append(ArtifactIssue("schema_version", "must equal 2"))
     if not isinstance(data.get("project"), str) or not str(data.get("project", "")).strip():
         issues.append(ArtifactIssue("project", "must be a non-empty string"))
     for key in ("source_image", "reconstructed_source", "difference_image"):
         if not isinstance(data.get(key), str) or not str(data.get(key, "")).strip():
             issues.append(ArtifactIssue(key, "must be a non-empty string"))
+
     derived_from = data.get("derived_from")
     if not isinstance(derived_from, Mapping):
         issues.append(ArtifactIssue("derived_from", "must be a mapping"))
     else:
         for key in ("mask_manifest", "asset_generation_queue"):
-            if not isinstance(derived_from.get(key), str) or not str(
-                derived_from.get(key, "")
-            ).strip():
+            value = derived_from.get(key)
+            if not isinstance(value, str) or not value.strip():
                 issues.append(ArtifactIssue(f"derived_from.{key}", "must be a non-empty string"))
+
+    count_threshold_keys = (
+        "max_white_halo_px",
+        "max_transparent_hole_px",
+        "max_overlap_deficit_px",
+    )
+    score_threshold_keys = (
+        "max_preserve_region_difference_score",
+        "max_allowed_change_region_difference_score",
+        "max_visual_reconstruction_difference_score",
+    )
+    threshold_values: dict[str, float] = {}
     thresholds = data.get("thresholds")
     if not isinstance(thresholds, Mapping):
         issues.append(ArtifactIssue("thresholds", "must be a mapping"))
-        max_global_difference = 0.0
     else:
-        max_global_difference_value = thresholds.get("max_global_difference_score")
-        if (
-            not isinstance(max_global_difference_value, (int, float))
-            or isinstance(max_global_difference_value, bool)
-            or not 0 <= max_global_difference_value <= 1
-        ):
+        expected_thresholds = set(count_threshold_keys) | set(score_threshold_keys)
+        unexpected_thresholds = set(thresholds) - expected_thresholds
+        if unexpected_thresholds:
             issues.append(
                 ArtifactIssue(
-                    "thresholds.max_global_difference_score",
-                    "must be between 0 and 1",
+                    "thresholds",
+                    f"contains unsupported fields: {sorted(unexpected_thresholds)}",
                 )
             )
-            max_global_difference = 0.0
-        else:
-            max_global_difference = float(max_global_difference_value)
+        for key in count_threshold_keys:
+            value = thresholds.get(key)
+            if not is_non_negative_int(value):
+                issues.append(
+                    ArtifactIssue(f"thresholds.{key}", "must be a non-negative integer")
+                )
+                threshold_values[key] = 0.0
+            else:
+                assert isinstance(value, int)
+                threshold_values[key] = float(value)
+        for key in score_threshold_keys:
+            value = thresholds.get(key)
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not 0 <= float(value) <= 1
+            ):
+                issues.append(ArtifactIssue(f"thresholds.{key}", "must be between 0 and 1"))
+                threshold_values[key] = 0.0
+            else:
+                threshold_values[key] = float(value)
+        if threshold_values.get("max_preserve_region_difference_score") != 0.0:
+            issues.append(
+                ArtifactIssue(
+                    "thresholds.max_preserve_region_difference_score",
+                    "must equal 0",
+                )
+            )
+
     parts = data.get("parts")
     if not isinstance(parts, list):
         issues.append(ArtifactIssue("parts", "must be a list"))
         return issues
+    metric_thresholds = {
+        "white_halo_px": "max_white_halo_px",
+        "transparent_hole_px": "max_transparent_hole_px",
+        "overlap_deficit_px": "max_overlap_deficit_px",
+        "preserve_region_difference_score": "max_preserve_region_difference_score",
+        "allowed_change_region_difference_score": (
+            "max_allowed_change_region_difference_score"
+        ),
+        "visual_reconstruction_difference_score": (
+            "max_visual_reconstruction_difference_score"
+        ),
+    }
     seen: set[str] = set()
     failed_count = 0
     for index, part in enumerate(parts):
@@ -485,24 +550,72 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
             issues.append(ArtifactIssue(f"{base}.layer_id", f"duplicate id: {layer_id}"))
         else:
             seen.add(layer_id)
+
         status = part.get("quality_status")
         if status not in {"pass", "fail"}:
             issues.append(ArtifactIssue(f"{base}.quality_status", "must be pass or fail"))
         elif status == "fail":
             failed_count += 1
+
+        allowed_change = part.get("allowed_change_region")
+        if not isinstance(allowed_change, Mapping):
+            issues.append(ArtifactIssue(f"{base}.allowed_change_region", "must be a mapping"))
+        else:
+            unexpected_allowed = set(allowed_change) - {
+                "edge_extension_mask",
+                "inpaint_mask",
+                "pixel_count",
+            }
+            if unexpected_allowed:
+                issues.append(
+                    ArtifactIssue(
+                        f"{base}.allowed_change_region",
+                        f"contains unsupported fields: {sorted(unexpected_allowed)}",
+                    )
+                )
+            for key in ("edge_extension_mask", "inpaint_mask"):
+                value = allowed_change.get(key)
+                if not isinstance(value, str) or not value.strip():
+                    issues.append(
+                        ArtifactIssue(
+                            f"{base}.allowed_change_region.{key}",
+                            "must be a non-empty string",
+                        )
+                    )
+            if not is_non_negative_int(allowed_change.get("pixel_count")):
+                issues.append(
+                    ArtifactIssue(
+                        f"{base}.allowed_change_region.pixel_count",
+                        "must be a non-negative integer",
+                    )
+                )
+
         metrics = part.get("metrics")
+        numeric_metrics: dict[str, float] = {}
         if not isinstance(metrics, Mapping):
             issues.append(ArtifactIssue(f"{base}.metrics", "must be a mapping"))
         else:
-            for key in (
-                "white_halo_px",
-                "transparent_hole_px",
-                "overlap_deficit_px",
-                "difference_score",
-            ):
+            unexpected_metrics = set(metrics) - set(metric_thresholds)
+            if unexpected_metrics:
+                issues.append(
+                    ArtifactIssue(
+                        f"{base}.metrics",
+                        f"contains unsupported fields: {sorted(unexpected_metrics)}",
+                    )
+                )
+            for key in metric_thresholds:
                 value = metrics.get(key)
-                if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
-                    issues.append(ArtifactIssue(f"{base}.metrics.{key}", "must be non-negative"))
+                valid_score = key.endswith("_score") and isinstance(value, (int, float)) and (
+                    not isinstance(value, bool) and 0 <= float(value) <= 1
+                )
+                valid_count = not key.endswith("_score") and is_non_negative_int(value)
+                if not valid_score and not valid_count:
+                    requirement = "between 0 and 1" if key.endswith("_score") else "non-negative"
+                    issues.append(ArtifactIssue(f"{base}.metrics.{key}", f"must be {requirement}"))
+                else:
+                    assert isinstance(value, (int, float))
+                    numeric_metrics[key] = float(value)
+
         failed_checks = part.get("failed_checks")
         if not isinstance(failed_checks, list) or not all(
             isinstance(value, str) and value in QUALITY_CHECKS for value in failed_checks
@@ -513,25 +626,19 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
                     f"must only contain {sorted(QUALITY_CHECKS)}",
                 )
             )
-        elif isinstance(metrics, Mapping):
+        else:
             expected_checks = {
-                check
-                for metric, check in (
-                    ("white_halo_px", "white_halo_px"),
-                    ("transparent_hole_px", "transparent_hole_px"),
-                    ("overlap_deficit_px", "overlap_deficit_px"),
-                    ("difference_score", "source_pixel_difference"),
-                )
-                if isinstance(metrics.get(metric), (int, float))
-                and not isinstance(metrics.get(metric), bool)
-                and metrics.get(metric, 0) > 0
+                metric
+                for metric, threshold_key in metric_thresholds.items()
+                if metric in numeric_metrics
+                and numeric_metrics[metric] > threshold_values.get(threshold_key, 0.0)
             }
             actual_checks = set(failed_checks)
             if len(actual_checks) != len(failed_checks) or actual_checks != expected_checks:
                 issues.append(
                     ArtifactIssue(
                         f"{base}.failed_checks",
-                        f"must exactly match non-zero metrics: {sorted(expected_checks)}",
+                        f"must exactly match metrics above thresholds: {sorted(expected_checks)}",
                     )
                 )
             expected_status = "fail" if expected_checks else "pass"
@@ -539,9 +646,10 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
                 issues.append(
                     ArtifactIssue(
                         f"{base}.quality_status",
-                        f"must equal {expected_status} for the recorded metrics",
+                        f"must equal {expected_status} for the configured thresholds",
                     )
                 )
+
     summary = data.get("summary")
     if not isinstance(summary, Mapping):
         issues.append(ArtifactIssue("summary", "must be a mapping"))
@@ -550,22 +658,28 @@ def validate_asset_quality(data: Mapping[str, Any]) -> list[ArtifactIssue]:
             issues.append(ArtifactIssue("summary.total_parts", f"must equal {len(parts)}"))
         if summary.get("failed_parts") != failed_count:
             issues.append(ArtifactIssue("summary.failed_parts", f"must equal {failed_count}"))
-        difference_value = summary.get("global_difference_score")
-        global_failed = isinstance(difference_value, (int, float)) and (
-            not isinstance(difference_value, bool)
-            and difference_value > max_global_difference
+        visual_value = summary.get("visual_reconstruction_difference_score")
+        visual_score = (
+            float(visual_value)
+            if isinstance(visual_value, (int, float))
+            and not isinstance(visual_value, bool)
+            and 0 <= float(visual_value) <= 1
+            else None
         )
-        expected_result = "fail" if failed_count or global_failed else "pass"
+        if visual_score is None:
+            issues.append(
+                ArtifactIssue(
+                    "summary.visual_reconstruction_difference_score",
+                    "must be between 0 and 1",
+                )
+            )
+        visual_failed = visual_score is not None and visual_score > threshold_values.get(
+            "max_visual_reconstruction_difference_score",
+            0.0,
+        )
+        expected_result = "fail" if failed_count or visual_failed else "pass"
         if summary.get("result") != expected_result:
             issues.append(ArtifactIssue("summary.result", f"must equal {expected_result}"))
-        if (
-            not isinstance(difference_value, (int, float))
-            or isinstance(difference_value, bool)
-            or not 0 <= difference_value <= 1
-        ):
-            issues.append(
-                ArtifactIssue("summary.global_difference_score", "must be between 0 and 1")
-            )
     return issues
 
 

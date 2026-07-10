@@ -48,6 +48,7 @@ def build_mask_manifest(
                 "layer_id": asset.get("layer_id"),
                 "target_mask": asset.get("target_mask"),
                 "protect_mask": asset.get("protect_mask"),
+                "edge_extension_mask": asset.get("edge_extension_mask"),
                 "inpaint_mask": asset.get("inpaint_mask"),
                 "source_file": source_path,
                 "output_file": asset.get("source_file"),
@@ -62,7 +63,7 @@ def build_mask_manifest(
         )
     parts.sort(key=lambda part: int(part["draw_order"]))
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "project": queue.get("project"),
         "derived_from": {
             "asset_generation_queue": queue_ref,

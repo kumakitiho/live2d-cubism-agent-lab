@@ -93,6 +93,7 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
         target.putpixel(point, 255)
     target.save(tmp_path / "target.png")
     target.save(tmp_path / "protect.png")
+    Image.new("L", source.size, 0).save(tmp_path / "edge-extension.png")
     Image.new("L", source.size, 0).save(tmp_path / "inpaint.png")
     (tmp_path / "character_spec.yaml").write_text("model_scope: bust_up\n", encoding="utf-8")
     (tmp_path / "feedback.yaml").write_text("issues: []\n", encoding="utf-8")
@@ -107,8 +108,9 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
             {
                 "layer_id": "fixture_part",
                 "target_mask": "target.png",
-                "protect_mask": "protect.png",
-                "inpaint_mask": "inpaint.png",
+                    "protect_mask": "protect.png",
+                    "edge_extension_mask": "edge-extension.png",
+                    "inpaint_mask": "inpaint.png",
                 "source_file": "parts/fixture.png",
                 "generation_method": "extract",
                 "dependencies": [],
@@ -121,8 +123,9 @@ def test_png_fixture_extract_recompose_quality_and_motion_pipeline(tmp_path: Pat
             {
                 "layer_id": "guide_only",
                 "target_mask": "target.png",
-                "protect_mask": "protect.png",
-                "inpaint_mask": "inpaint.png",
+                    "protect_mask": "protect.png",
+                    "edge_extension_mask": "edge-extension.png",
+                    "inpaint_mask": "inpaint.png",
                 "source_file": "parts/missing-guide.png",
                 "generation_method": "extract",
                 "dependencies": [],
