@@ -5,9 +5,32 @@ from pathlib import Path
 from tools.action_plan import load_action_plan, validate_action_plan
 
 
-def test_sample_action_plan_is_valid() -> None:
-    plan = load_action_plan(Path("examples/action_plan.sample.yaml"))
+def test_no_assets_action_plan_is_valid() -> None:
+    plan = load_action_plan(Path("examples/action_plan.no_assets.sample.yaml"))
     assert validate_action_plan(plan) == []
+
+
+def test_real_assets_action_plan_is_valid() -> None:
+    plan = load_action_plan(Path("examples/action_plan.real_assets.sample.yaml"))
+    assert validate_action_plan(plan) == []
+
+
+def test_character_spec_validation_is_not_a_cubism_action() -> None:
+    plan = {
+        "schema_version": 1,
+        "project": "sample",
+        "steps": [
+            {
+                "id": "validate_spec",
+                "mode": "file",
+                "command": "file.validate_character_spec",
+                "args": {"path": "examples/character_spec.sample.yaml"},
+            }
+        ],
+    }
+
+    messages = [issue.format() for issue in validate_action_plan(plan)]
+    assert any("not allowed" in message for message in messages)
 
 
 def test_invalid_mode_is_reported() -> None:

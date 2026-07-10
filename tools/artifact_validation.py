@@ -9,6 +9,15 @@ from typing import Any
 import yaml
 
 TEMPORARY_NAME_TOKENS = ("copy", "temp", "tmp", "old", "rough", "test", "コピー")
+HUMAN_CONFIRMED_SPEC_FIELDS = {
+    "source_image.rights_status",
+    "model_scope",
+    "motion_level",
+    "target_runtime",
+    "purpose",
+    "expressions",
+    "physics_targets",
+}
 
 
 @dataclass(frozen=True)
@@ -34,10 +43,16 @@ def validate_character_spec(data: Mapping[str, Any]) -> list[ArtifactIssue]:
     required = (
         "schema_version",
         "project",
-        "model",
+        "source_image",
+        "model_scope",
+        "motion_level",
+        "target_runtime",
+        "purpose",
         "appearance",
         "motions",
         "expressions",
+        "physics_targets",
+        "spec_provenance",
         "constraints",
         "deliverables",
     )
@@ -48,13 +63,110 @@ def validate_character_spec(data: Mapping[str, Any]) -> list[ArtifactIssue]:
     if data.get("schema_version") != 1:
         issues.append(ArtifactIssue("schema_version", "must equal 1"))
 
-    for key in ("model", "appearance", "motions", "constraints"):
+    if data.get("model_scope") not in {"bust_up", "half_body", "full_body"}:
+        issues.append(ArtifactIssue("model_scope", "must be bust_up, half_body, or full_body"))
+    if data.get("motion_level") not in {"minimal", "standard", "expressive"}:
+        issues.append(ArtifactIssue("motion_level", "must be minimal, standard, or expressive"))
+    for key in ("project", "target_runtime", "purpose"):
+        value = data.get(key)
+        if not isinstance(value, str) or not value.strip():
+            issues.append(ArtifactIssue(key, "must be a non-empty string"))
+
+    source_image = data.get("source_image")
+    if not isinstance(source_image, Mapping):
+        issues.append(ArtifactIssue("source_image", "must be a mapping"))
+    else:
+        source_path = source_image.get("path")
+        if not isinstance(source_path, str) or not source_path.strip():
+            issues.append(ArtifactIssue("source_image.path", "must be a non-empty string"))
+        if source_image.get("rights_status") != "confirmed":
+            issues.append(
+                ArtifactIssue(
+                    "source_image.rights_status",
+                    "must be confirmed before asset handoff",
+                )
+            )
+
+    for key in ("appearance", "motions", "spec_provenance", "constraints"):
         if key in data and not isinstance(data[key], Mapping):
             issues.append(ArtifactIssue(key, "must be a mapping"))
 
-    for key in ("expressions", "deliverables"):
-        if key in data and not isinstance(data[key], list):
-            issues.append(ArtifactIssue(key, "must be a list"))
+    for key in ("expressions", "physics_targets", "deliverables"):
+        value = data.get(key)
+        if (
+            not isinstance(value, list)
+            or not value
+            or not all(isinstance(item, str) and item.strip() for item in value)
+        ):
+            issues.append(ArtifactIssue(key, "must be a non-empty list of strings"))
+
+    appearance = data.get("appearance")
+    if isinstance(appearance, Mapping):
+        if not isinstance(appearance.get("observed"), Mapping):
+            issues.append(ArtifactIssue("appearance.observed", "must be a mapping"))
+        for key in ("requested_changes", "uncertain"):
+            value = appearance.get(key)
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                issues.append(ArtifactIssue(f"appearance.{key}", "must be a list of strings"))
+
+    motions = data.get("motions")
+    if isinstance(motions, Mapping):
+        for key in ("face", "body"):
+            value = motions.get(key)
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                issues.append(ArtifactIssue(f"motions.{key}", "must be a list of strings"))
+
+    provenance = data.get("spec_provenance")
+    if isinstance(provenance, Mapping):
+        provenance_sets: dict[str, set[str]] = {}
+        for key in (
+            "image_inferred_fields",
+            "user_confirmed_fields",
+            "assumptions",
+            "open_questions",
+        ):
+            value = provenance.get(key)
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                issues.append(ArtifactIssue(f"spec_provenance.{key}", "must be a list of strings"))
+            else:
+                values = [str(item) for item in value]
+                if len(values) != len(set(values)):
+                    issues.append(
+                        ArtifactIssue(f"spec_provenance.{key}", "must not contain duplicates")
+                    )
+                provenance_sets[key] = set(values)
+
+        inferred = provenance_sets.get("image_inferred_fields", set())
+        confirmed = provenance_sets.get("user_confirmed_fields", set())
+        for field in sorted(HUMAN_CONFIRMED_SPEC_FIELDS & inferred):
+            issues.append(
+                ArtifactIssue(
+                    "spec_provenance.image_inferred_fields",
+                    f"human-only field cannot be image-inferred: {field}",
+                )
+            )
+        for field in sorted(HUMAN_CONFIRMED_SPEC_FIELDS - confirmed):
+            issues.append(
+                ArtifactIssue(
+                    "spec_provenance.user_confirmed_fields",
+                    f"must include human-confirmed field: {field}",
+                )
+            )
+        for field in sorted(inferred & confirmed):
+            issues.append(
+                ArtifactIssue(
+                    "spec_provenance",
+                    f"field cannot be both image-inferred and user-confirmed: {field}",
+                )
+            )
+        open_questions = provenance.get("open_questions")
+        if isinstance(open_questions, list) and open_questions:
+            issues.append(
+                ArtifactIssue(
+                    "spec_provenance.open_questions",
+                    "must be empty before asset handoff",
+                )
+            )
 
     constraints = data.get("constraints")
     if isinstance(constraints, Mapping):

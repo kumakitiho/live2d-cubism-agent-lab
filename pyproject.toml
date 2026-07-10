@@ -32,6 +32,8 @@ cubism-api = "tools.cubism_api:main"
 cubism-bridge = "tools.cubism_bridge:main"
 material-planner = "tools.material_planner:main"
 asset-manifest-validator = "tools.asset_manifest_validator:main"
+asset-feedback-validator = "tools.asset_feedback_validator:main"
+asset-generation-queue-validator = "tools.asset_generation_queue_validator:main"
 psd-asset-builder = "tools.psd_asset_builder:main"
 validate-action-plan = "scripts.validate_action_plan:main"
 

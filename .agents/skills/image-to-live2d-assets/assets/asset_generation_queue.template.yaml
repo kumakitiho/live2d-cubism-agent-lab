@@ -1,0 +1,83 @@
+schema_version: 1
+project: replace-me
+source_image: assets/source/character.png
+character_spec: generated/character_spec.yaml
+feedback_inputs: []
+jobs:
+  - id: eyes
+    part_family: eyes
+    targets: [eye_white_L, eye_white_R, eye_iris_L, eye_iris_R]
+    operations: [segment, mask_extract]
+    can_run_in_parallel: true
+    depends_on: []
+    outputs: [generated/parts/eye_white_L.png, generated/parts/eye_white_R.png]
+    feedback_refs: []
+    status: planned
+    validation:
+      same_canvas_alignment: false
+      transparent_png: false
+      style_match_reviewed: false
+  - id: mouth
+    part_family: mouth
+    targets: [mouth_upper, mouth_lower, mouth_inner]
+    operations: [segment, inpaint]
+    can_run_in_parallel: true
+    depends_on: []
+    outputs: [generated/parts/mouth_upper.png, generated/parts/mouth_inner.png]
+    feedback_refs: []
+    status: planned
+    validation:
+      same_canvas_alignment: false
+      transparent_png: false
+      style_match_reviewed: false
+  - id: hair
+    part_family: hair
+    targets: [hair_front_C, hair_side_L, hair_side_R, hair_back]
+    operations: [segment, mask_extract]
+    can_run_in_parallel: true
+    depends_on: []
+    outputs: [generated/parts/hair_front_C.png, generated/parts/hair_back.png]
+    feedback_refs: []
+    status: planned
+    validation:
+      same_canvas_alignment: false
+      transparent_png: false
+      style_match_reviewed: false
+  - id: body
+    part_family: body
+    targets: [neck_base, torso_base, clothes_upper]
+    operations: [segment, mask_extract]
+    can_run_in_parallel: true
+    depends_on: []
+    outputs: [generated/parts/torso_base.png, generated/parts/clothes_upper.png]
+    feedback_refs: []
+    status: planned
+    validation:
+      same_canvas_alignment: false
+      transparent_png: false
+      style_match_reviewed: false
+  - id: hidden_fill
+    part_family: hidden_fill
+    targets: [face_hidden_fill, hair_back_hidden_fill]
+    operations: [mask, inpaint]
+    can_run_in_parallel: true
+    depends_on: []
+    outputs: [generated/parts/face_hidden_fill.png, generated/parts/hair_back_hidden_fill.png]
+    feedback_refs: []
+    status: planned
+    validation:
+      same_canvas_alignment: false
+      transparent_png: false
+      style_match_reviewed: false
+      inferred_marked: true
+merge_gate:
+  strategy: all_required_jobs_approved
+  required_jobs: [eyes, mouth, hair, body, hidden_fill]
+  validation:
+    unique_layer_ids: false
+    same_canvas_alignment: false
+    transparent_pngs: false
+    inferred_assets_reviewed: false
+    manifest_valid: false
+    blocking_feedback_resolved: false
+  output_manifest: generated/asset_manifest.yaml

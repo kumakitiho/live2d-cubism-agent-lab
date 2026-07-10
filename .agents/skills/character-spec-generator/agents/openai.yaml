@@ -1,0 +1,4 @@
+interface:
+  display_name: "Character Spec Generator"
+  short_description: "Create Live2D character specs from one source image"
+  default_prompt: "Use $character-spec-generator to create a Live2D character specification from this source image and my preferences."

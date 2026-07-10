@@ -1,0 +1,21 @@
+schema_version: 1
+project: replace-me
+source_stage: live2d-cubism-workflow
+target_stage: image-to-live2d-assets
+model_refs:
+  model_import_psd: generated/model_import.psd
+  layer_map: generated/layer_map.yaml
+  action_plan_report: outputs/action_plan_report.md
+feedback:
+  - id: feedback-001
+    target_layer_id: replace-me
+    issue_type: deformation_break
+    severity: high
+    evidence:
+      kind: screenshot
+      path: outputs/replace-me.png
+      description: replace-me
+    requested_action:
+      action: adjust_mask
+      details: replace-me
+    status: open

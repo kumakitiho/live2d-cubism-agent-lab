@@ -1,35 +1,25 @@
 schema_version: 1
-project: neutral-short-hair-streamer
+project: sample-one-image-model
 steps:
-  - id: validate_character_spec
-    mode: file
-    command: file.validate_character_spec
-    args:
-      path: examples/character_spec.sample.yaml
-
   - id: validate_layer_map
     mode: file
     command: file.validate_layer_map
     args:
-      path: examples/layer_map.sample.yaml
-
+      path: generated/layer_map.yaml
   - id: before_documents
     mode: api
     command: cubism_api.get_documents
-
   - id: import_psd
     mode: ui_macro
     command: cubism_ui.import_psd
     args:
-      psd_path: assets/models/model_import.psd
+      psd_path: generated/model_import.psd
       open_mode: create_new_model
       screenshot: outputs/import_after.png
       failure_screenshot: outputs/import_failed.png
-
   - id: after_snapshot
     mode: api
     command: cubism_api.get_document_snapshot
-
   - id: verify_imported_document
     mode: file
     command: file.verify_imported_document
@@ -37,7 +27,6 @@ steps:
       before_step: before_documents
       import_step: import_psd
       after_step: after_snapshot
-
   - id: apply_auto_mesh
     mode: ui_macro
     command: cubism_ui.apply_auto_mesh
@@ -48,15 +37,13 @@ steps:
       failure_screenshot: outputs/auto_mesh_failed.png
     recovery:
       command: cubism_ui.undo
-
   - id: get_parameters
     mode: api
     command: cubism_api.get_parameters
     args:
       use_current_model: true
-
   - id: visual_review
     mode: manual_checkpoint
     instruction: |
-      outputs/import_after.png と outputs/auto_mesh_after.png を確認する。
-      レイヤー位置、欠け、半透明ゴミ、メッシュ破綻がないか判定する。
+      importとauto mesh結果を確認する。
+      素材起因の問題はasset_feedback.yamlへ記録し、image-to-live2d-assetsへ返す。

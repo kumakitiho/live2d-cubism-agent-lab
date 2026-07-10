@@ -1,4 +1,4 @@
 interface:
   display_name: "Image to Live2D Assets"
-  short_description: "Plan Live2D asset packs from one source image"
-  default_prompt: "Use $image-to-live2d-assets to plan and validate a Live2D asset pack from this source image."
+  short_description: "Build Live2D assets from an approved character spec"
+  default_prompt: "Use $image-to-live2d-assets with this approved character spec and source image to plan and validate a Live2D asset pack."

@@ -1,25 +1,29 @@
-# Workflow
+# Cubism workflow
 
-## フェーズ
+## Input gate
 
-1. **spec**: `character_spec.yaml` に目的、範囲、外見、表情、動き、制約、納品物を記録する。
-2. **asset/layer preparation**: source素材を評価し、`layer_map.yaml` とPSD分離指示を作る。素材分けmasterとCubism import PSDは分ける。
-3. **Cubism operation**: validator済みの `action_plan.yaml` をdry-runし、名前付きUIマクロとExternal APIを実行する。
-4. **rigging/QA**: パラメータ、デフォーマ、物理演算、表情、VTube Studio動作を確認する。
+- `model_import.psd` が存在し、上流manifestで承認済みである。
+- `layer_map.yaml` がPSDのlayer ID/name/canvasと一致する。
+- `action_plan.yaml` がallowlist validatorを通る。
+- source権利、隠れ領域、mask、merge gateは上流で解決済みである。
 
-## 成果物
+## Operation
 
-- `character_spec.yaml`
-- `layer_map.yaml`
-- `action_plan.yaml`
-- `rigging_plan.md`
-- `outputs/action_plan_report.md`
-- `outputs/*.png`
+1. no-assets planでdry-run境界を確認する。
+2. real-assets planをvalidatorへ通す。
+3. import前後のdocument snapshotを比較する。
+4. auto meshやparameter probeを名前付き操作で実行する。
+5. reportとevidenceを保存する。
 
-## 完了条件
+## Evaluation
 
-- 構造ファイルがvalidatorを通る。
-- UI/API操作はdry-runとの差分が説明できる。
-- PSD importでは実行前後のModelingDocument数と、実行後current ModelUIDの所属を検証する。
-- 失敗時のレポートとスクリーンショットが残る。
-- CubismとVTube Studioで目視確認するまで、完成または本番投入可能と扱わない。
+- UI自動化の失敗はoperation reportへ記録する。
+- 素材の欠け、境界、隠れ塗り、分割、style、transparencyの問題は `asset_feedback.yaml` へ記録する。
+- `target_layer_id`、severity、evidence、requested actionを必須にする。
+- feedbackはlayer mapと照合してから `image-to-live2d-assets` へ返す。
+
+## Completion
+
+- action planが最後まで実行または明示的に停止している。
+- blocking feedbackが残っていない。
+- Cubism/VTube Studioの目視QAと未自動化項目が記録されている。

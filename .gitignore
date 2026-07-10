@@ -12,6 +12,9 @@ build/
 
 # Local Cubism authorization and user-owned model assets
 .live2d-agent/
+generated/
+assets/source/*
+!assets/source/.gitkeep
 assets/models/*
 !assets/models/.gitkeep
 *.psd

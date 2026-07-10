@@ -1,38 +1,31 @@
 schema_version: 1
-project: sample-one-image-model
+project: replace-me
 source_image:
   path: assets/source/character.png
-  rights_status: confirmed
+  rights_status: needs_confirmation
 model_scope: bust_up
 motion_level: standard
 target_runtime: vtube_studio
-purpose: game_streaming
+purpose: streaming
 appearance:
   observed:
     framing: bust_up
-    hair: 中性的な黒髪ショート
-    eyes: 暗色のアニメ調
-    outfit: ゲーム配信用の上半身衣装
+    hair: replace-me
+    eyes: replace-me
+    outfit: replace-me
     accessories: []
     source_expression: neutral
   requested_changes: []
-  uncertain: [髪で隠れた耳と後頭部の形状]
+  uncertain: []
 motions:
   face: [blink, eye_xy, brow_up_down, mouth_open, head_xyz]
   body: [body_xy]
-expressions: [normal, smile, surprised, unimpressed]
+expressions: [normal, smile, surprised]
 physics_targets: [front_hair, side_hair, back_hair]
 spec_provenance:
-  image_inferred_fields: [appearance.observed]
-  user_confirmed_fields:
-    - source_image.rights_status
-    - model_scope
-    - motion_level
-    - target_runtime
-    - purpose
-    - expressions
-    - physics_targets
-  assumptions: [隠れ領域は素材生成工程で補完する]
+  image_inferred_fields: []
+  user_confirmed_fields: []
+  assumptions: []
   open_questions: []
 constraints:
   no_full_auto_rigging_claim: true

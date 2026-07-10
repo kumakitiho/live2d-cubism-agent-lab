@@ -1,0 +1,12 @@
+schema_version: 1
+project: no-assets-dry-run
+steps:
+  - id: get_documents
+    mode: api
+    command: cubism_api.get_documents
+  - id: get_edit_mode
+    mode: api
+    command: cubism_api.get_current_edit_mode
+  - id: dry_run_review
+    mode: manual_checkpoint
+    instruction: dry-run結果にUI mutationがなく、API payloadだけが計画されたことを確認する。

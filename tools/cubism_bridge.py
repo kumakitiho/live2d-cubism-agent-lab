@@ -11,7 +11,6 @@ from typing import Any
 from tools.action_plan import load_action_plan, require_valid_action_plan
 from tools.artifact_validation import (
     load_yaml_mapping,
-    validate_character_spec,
     validate_layer_map,
 )
 from tools.cubism_api import (
@@ -39,9 +38,7 @@ def _validate_artifact(command: str, args: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(f"{command} requires args.path")
     path = Path(path_value)
     data = load_yaml_mapping(path)
-    if command == "file.validate_character_spec":
-        issues = validate_character_spec(data)
-    elif command == "file.validate_layer_map":
+    if command == "file.validate_layer_map":
         issues = validate_layer_map(data)
     else:
         raise ValueError(f"unknown file command: {command}")

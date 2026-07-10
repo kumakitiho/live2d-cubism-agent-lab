@@ -91,3 +91,40 @@
 - builderもvalidatorと同じsource/PNG signature関数を使い、偽画像で `ready_to_build` にならないようにした。
 - builderの相対PSD出力を `base_dir` 基準で絶対化し、将来backendが別cwdへ書かないようにした。
 - 最終再レビューを受け、backend戻り値のpath一致、非空、`8BPS` signatureを成功条件にした。
+
+## 2026-07-10 — Skill responsibility and feedback loop
+
+### 判断
+
+- character spec収集を `character-spec-generator` へ分離した。
+- `image-to-live2d-assets` が並列素材queueとmerge gateを所有する。
+- `live2d-cubism-workflow` は承認済みPSD、layer map、action planの操作とfeedback作成だけを担当する。
+- `live2d-one-image-vtuber` は3 Skillのhandoffとfeedback遷移だけを管理し、Agents SDKはまだ導入しない。
+
+### Harness
+
+- character specは画像観測、ユーザー確認、仮定、未解決質問を分離する。
+- asset feedbackはlayer mapの実IDと照合する。
+- queueは5つの必須part family、並列job、merge gateをvalidatorで固定する。
+- no-assets action planとreal-assets action planを分離する。
+- sourceとgenerated成果物をGit管理から除外する。
+
+### Subagent review対応
+
+- `model_scope`、`motion_level`、`target_runtime`、`purpose`、`expressions`、`physics_targets`、権利状態を人間確認必須fieldとしてprovenance validatorへ追加した。
+- image-inferred/user-confirmedの重複、誤分類、field重複を拒否するようにした。
+- approved queue jobは全job validationがtrueの場合だけmerge対象にした。
+- queue validatorがfeedback実ファイルとlayer mapを読み、ID、target layerの所有job、重複割当、severityに関係なく未解決feedbackをmerge gateへ反映するようにした。
+- asset feedback CLIのlayer map引数を必須化し、projectと`model_refs.layer_map`も照合するようにした。
+- queue、feedback、layer map、manifestのprojectを照合し、handoff時はmanifestの宣言パスとsource画像も結合検証するようにした。
+- queue CLIの相対パス、`--base-dir`、欠落feedback、layer map不整合、manifest path/project/source不一致を自動テストへ追加した。
+
+### Final verification
+
+- Skill quick validation: 4 Skillすべてpass
+- Ruff lint / 変更対象format check: pass
+- Mypy: 24 source files pass
+- Pytest: 83 passed
+- pip check / `git diff --check`: pass
+- 最終サブエージェントレビュー: 追加指摘なし
+- 実機Cubism / VTube Studioの目視QAは実素材と実機環境が必要なため未実施

@@ -11,7 +11,6 @@ ALLOWED_MODES = {"file", "ui_macro", "api", "manual_checkpoint"}
 
 ALLOWED_COMMANDS: dict[str, set[str]] = {
     "file": {
-        "file.validate_character_spec",
         "file.validate_layer_map",
         "file.verify_imported_document",
     },
@@ -40,7 +39,6 @@ ALLOWED_COMMANDS: dict[str, set[str]] = {
 }
 
 COMMAND_ARGUMENTS: dict[str, tuple[set[str], set[str]]] = {
-    "file.validate_character_spec": ({"path"}, set()),
     "file.validate_layer_map": ({"path"}, set()),
     "file.verify_imported_document": (
         {"before_step", "import_step", "after_step"},
@@ -90,7 +88,6 @@ OUTPUT_PATH_ARGUMENTS: dict[str, set[str]] = {
 }
 
 WORKSPACE_INPUT_PATH_ARGUMENTS: dict[str, set[str]] = {
-    "file.validate_character_spec": {"path"},
     "file.validate_layer_map": {"path"},
 }
 

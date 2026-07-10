@@ -1,0 +1,4 @@
+interface:
+  display_name: "Live2D One Image VTuber"
+  short_description: "Orchestrate one-image Live2D VTuber production"
+  default_prompt: "Use $live2d-one-image-vtuber to orchestrate this source image through spec, asset, and Cubism stages."

@@ -1,0 +1,32 @@
+schema_version: 1
+project: replace-me
+steps:
+  - id: validate_layer_map
+    mode: file
+    command: file.validate_layer_map
+    args:
+      path: generated/layer_map.yaml
+  - id: before_documents
+    mode: api
+    command: cubism_api.get_documents
+  - id: import_psd
+    mode: ui_macro
+    command: cubism_ui.import_psd
+    args:
+      psd_path: generated/model_import.psd
+      open_mode: create_new_model
+      screenshot: outputs/import_after.png
+      failure_screenshot: outputs/import_failed.png
+  - id: after_snapshot
+    mode: api
+    command: cubism_api.get_document_snapshot
+  - id: verify_imported_document
+    mode: file
+    command: file.verify_imported_document
+    args:
+      before_step: before_documents
+      import_step: import_psd
+      after_step: after_snapshot
+  - id: visual_review
+    mode: manual_checkpoint
+    instruction: Import結果を確認し、素材起因の問題はasset_feedback.yamlへ記録する。
