@@ -1,0 +1,71 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Live2D mask manifest
+type: object
+additionalProperties: false
+required: [schema_version, project, derived_from, source_image, canvas, parts]
+properties:
+  schema_version:
+    const: 1
+  project:
+    type: string
+    minLength: 1
+  derived_from:
+    type: object
+    additionalProperties: false
+    required: [asset_generation_queue, queue_schema_version]
+    properties:
+      asset_generation_queue: {type: string, minLength: 1}
+      queue_schema_version: {type: integer, minimum: 1}
+  source_image:
+    type: object
+    additionalProperties: false
+    required: [path]
+    properties:
+      path: {type: string, minLength: 1}
+  canvas:
+    type: object
+    required: [width, height]
+    properties:
+      width: {type: integer, minimum: 1}
+      height: {type: integer, minimum: 1}
+      color_mode: {const: RGBA}
+      bit_depth: {const: 8}
+      color_profile: {type: string}
+  parts:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - layer_id
+        - target_mask
+        - protect_mask
+        - inpaint_mask
+        - source_file
+        - output_file
+        - generation_method
+        - dependencies
+        - draw_order
+        - overlap_margin_px
+        - quality_status
+        - refinement_attempts
+        - include_in_import
+      properties:
+        layer_id: {type: string, minLength: 1}
+        target_mask: {type: string, minLength: 1}
+        protect_mask: {type: string, minLength: 1}
+        inpaint_mask: {type: string, minLength: 1}
+        source_file: {type: string, minLength: 1}
+        output_file: {type: string, minLength: 1}
+        generation_method:
+          enum: [extract, extract_and_edge_repair, transparency_fill, inpaint, redraw]
+        dependencies:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+        draw_order: {type: integer, minimum: 1}
+        overlap_margin_px: {type: integer, minimum: 0}
+        quality_status: {enum: [pending, pass, warn, fail]}
+        refinement_attempts: {type: integer, minimum: 0}
+        include_in_import: {type: boolean}

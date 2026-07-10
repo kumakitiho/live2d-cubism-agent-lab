@@ -13,7 +13,14 @@ import yaml
 RIGHTS_STATUSES = {"confirmed", "needs_confirmation"}
 READINESS_STATUSES = {"planned", "generated", "reviewed", "approved", "rejected"}
 SIDES = {"L", "R", "C", "none"}
-GENERATION_METHODS = {"extract", "mask_extract", "inpaint", "redraw"}
+GENERATION_METHODS = {
+    "extract",
+    "extract_and_edge_repair",
+    "transparency_fill",
+    "inpaint",
+    "redraw",
+    "mask_extract",
+}
 IMPORT_CONSTRAINTS = (
     "unique_layer_names",
     "one_drawable_per_layer",
@@ -315,13 +322,19 @@ def validate_asset_manifest(
                         "must be true for redraw assets",
                     )
                 )
-            if part.get("generation_method") in {"mask_extract", "inpaint"}:
+            if part.get("generation_method") in {
+                "extract",
+                "extract_and_edge_repair",
+                "transparency_fill",
+                "mask_extract",
+                "inpaint",
+            }:
                 mask_file = part.get("mask_file")
                 if not isinstance(mask_file, str) or Path(mask_file).suffix.lower() != ".png":
                     errors.append(
                         ManifestIssue(
                             f"{base}.mask_file",
-                            "mask_extract and inpaint assets must reference a .png mask",
+                            "extract/fill/inpaint assets must reference a .png mask",
                         )
                     )
             if inferred:

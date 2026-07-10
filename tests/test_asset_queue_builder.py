@@ -35,7 +35,10 @@ def test_queue_asset_change_updates_both_derivatives() -> None:
     layer_map = derive_layer_map(queue)
 
     assert manifest["parts"][0]["layer_name"] == "eye_sclera_L"
-    assert layer_map["layers"][0]["name"] == "eye_sclera_L"
+    updated_layer = next(
+        layer for layer in layer_map["layers"] if layer["layer_id"] == "eye_white_L"
+    )
+    assert updated_layer["name"] == "eye_sclera_L"
 
 
 def test_builder_writes_declared_derivatives_from_queue(tmp_path: Path) -> None:
@@ -62,8 +65,45 @@ def test_builder_writes_declared_derivatives_from_queue(tmp_path: Path) -> None:
     assert exit_code == 0
     manifest = load_yaml_mapping(tmp_path / "derived/asset_manifest.yaml")
     layer_map = load_yaml_mapping(tmp_path / "derived/layer_map.yaml")
-    assert manifest == derive_asset_manifest(queue, queue_ref=queue_path.as_posix())
-    assert layer_map == derive_layer_map(queue, queue_ref=queue_path.as_posix())
+    assert manifest == derive_asset_manifest(queue, queue_ref="queue.yaml")
+    assert layer_map == derive_layer_map(queue, queue_ref="queue.yaml")
+
+
+def test_layer_map_only_contains_import_assets() -> None:
+    queue = deepcopy(_queue())
+    queue["assets"][0]["include_in_import"] = False
+
+    layer_map = derive_layer_map(queue)
+
+    assert "eye_white_L" not in {layer["layer_id"] for layer in layer_map["layers"]}
+
+
+def test_layer_map_rejects_invalid_order_before_sorting() -> None:
+    queue = deepcopy(_queue())
+    queue["assets"][0]["draw_order"] = "first"
+
+    with pytest.raises(ValueError, match="positive integer"):
+        derive_layer_map(queue)
+
+
+def test_builder_normalizes_queue_ref_relative_to_base_dir(tmp_path: Path) -> None:
+    nested = tmp_path / "plans"
+    nested.mkdir()
+    queue = deepcopy(_queue())
+    queue["feedback_inputs"] = []
+    queue["jobs"][-1]["feedback_refs"] = []
+    queue["derivatives"]["asset_manifest"] = "derived/asset_manifest.yaml"
+    queue["derivatives"]["layer_map"] = "derived/layer_map.yaml"
+    queue_path = nested / "queue.yaml"
+    queue_path.write_text(
+        yaml.safe_dump(queue, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    assert main([str(queue_path), "--base-dir", str(tmp_path), "--execute"]) == 0
+
+    manifest = load_yaml_mapping(tmp_path / "derived/asset_manifest.yaml")
+    assert manifest["derived_from"]["asset_generation_queue"] == "plans/queue.yaml"
 
 
 def test_builder_rejects_output_outside_base_dir(tmp_path: Path) -> None:

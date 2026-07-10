@@ -12,6 +12,13 @@ import yaml
 from tools.artifact_validation import ArtifactIssue, load_yaml_mapping, validate_layer_map
 from tools.asset_feedback_validator import load_layer_map_context, validate_asset_feedback
 from tools.asset_manifest_validator import load_asset_manifest, validate_asset_manifest
+from tools.asset_pipeline_common import (
+    GENERATION_METHODS,
+    QUALITY_STATUSES,
+    is_non_negative_int,
+    is_positive_int,
+    validate_dependency_dag,
+)
 from tools.asset_queue_builder import derive_asset_manifest, derive_layer_map
 
 REQUIRED_PART_FAMILIES = {"eyes", "mouth", "hair", "body", "hidden_fill"}
@@ -136,8 +143,9 @@ def validate_asset_generation_queue(
         if key not in data:
             issues.append(ArtifactIssue(key, "is required"))
 
-    if data.get("schema_version") != 2:
-        issues.append(ArtifactIssue("schema_version", "must equal 2"))
+    schema_version = data.get("schema_version")
+    if schema_version not in {2, 3}:
+        issues.append(ArtifactIssue("schema_version", "must equal 2 or 3"))
     if raw_validation_mode not in {"strict", "dev"}:
         issues.append(ArtifactIssue("validation_mode", "must be strict or dev"))
     for key in ("project", "character_spec"):
@@ -163,6 +171,8 @@ def validate_asset_generation_queue(
             "layer_map": {".yaml", ".yml"},
             "model_import_psd": {".psd"},
         }
+        if schema_version == 3:
+            derivative_suffixes["mask_manifest"] = {".yaml", ".yml"}
         for key, suffixes in derivative_suffixes.items():
             value = derivatives_value.get(key)
             if not isinstance(value, str) or Path(value).suffix.lower() not in suffixes:
@@ -175,6 +185,8 @@ def validate_asset_generation_queue(
 
     asset_ids: set[str] = set()
     asset_readiness: dict[str, object] = {}
+    asset_dependencies: dict[str, set[str]] = {}
+    draw_orders: set[int] = set()
     assets = data.get("assets")
     if not isinstance(assets, list) or not assets:
         issues.append(ArtifactIssue("assets", "must be a non-empty list"))
@@ -184,13 +196,103 @@ def validate_asset_generation_queue(
             if not isinstance(asset, Mapping):
                 issues.append(ArtifactIssue(base, "must be a mapping"))
                 continue
+            required_asset_fields = [
+                "layer_id",
+                "layer_name",
+                "layer_path",
+                "source_file",
+                "generation_method",
+            ]
+            if schema_version == 3:
+                required_asset_fields.extend(
+                    [
+                        "target_mask",
+                        "protect_mask",
+                        "inpaint_mask",
+                        "dependencies",
+                        "draw_order",
+                        "overlap_margin_px",
+                        "quality_status",
+                        "refinement_attempts",
+                    ]
+                )
+            for key in required_asset_fields:
+                if key not in asset:
+                    issues.append(ArtifactIssue(f"{base}.{key}", "is required"))
             layer_id = asset.get("layer_id")
             if isinstance(layer_id, str) and layer_id.strip():
+                if layer_id in asset_ids:
+                    issues.append(ArtifactIssue(f"{base}.layer_id", f"duplicate id: {layer_id}"))
                 asset_ids.add(layer_id)
                 asset_readiness[layer_id] = asset.get("readiness")
+            else:
+                issues.append(ArtifactIssue(f"{base}.layer_id", "must be a non-empty string"))
+                continue
             layer_path = asset.get("layer_path")
             if not isinstance(layer_path, str) or not layer_path.strip():
                 issues.append(ArtifactIssue(f"{base}.layer_path", "must be a non-empty string"))
+            string_fields = ["layer_name", "source_file"]
+            if schema_version == 3:
+                string_fields.extend(["target_mask", "protect_mask", "inpaint_mask"])
+            for key in string_fields:
+                if not isinstance(asset.get(key), str) or not str(asset.get(key, "")).strip():
+                    issues.append(ArtifactIssue(f"{base}.{key}", "must be a non-empty string"))
+            allowed_generation_methods = set(GENERATION_METHODS)
+            if schema_version == 2:
+                allowed_generation_methods.add("mask_extract")
+            if asset.get("generation_method") not in allowed_generation_methods:
+                issues.append(
+                    ArtifactIssue(
+                        f"{base}.generation_method",
+                        f"must be one of {sorted(allowed_generation_methods)}",
+                    )
+                )
+            dependencies = asset.get("dependencies", [])
+            if not isinstance(dependencies, list) or not all(
+                isinstance(value, str) and value.strip() for value in dependencies
+            ):
+                issues.append(ArtifactIssue(f"{base}.dependencies", "must be a list of strings"))
+                asset_dependencies[layer_id] = set()
+            else:
+                asset_dependencies[layer_id] = set(dependencies)
+            draw_order = asset.get("draw_order", asset.get("order"))
+            if not is_positive_int(draw_order):
+                issues.append(ArtifactIssue(f"{base}.draw_order", "must be a positive integer"))
+            elif draw_order in draw_orders:
+                issues.append(ArtifactIssue(f"{base}.draw_order", f"duplicate order: {draw_order}"))
+            else:
+                assert isinstance(draw_order, int)
+                draw_orders.add(draw_order)
+            if schema_version == 3 and not is_non_negative_int(asset.get("overlap_margin_px")):
+                issues.append(
+                    ArtifactIssue(f"{base}.overlap_margin_px", "must be a non-negative integer")
+                )
+            if schema_version == 3 and asset.get("quality_status") not in QUALITY_STATUSES:
+                issues.append(
+                    ArtifactIssue(
+                        f"{base}.quality_status",
+                        f"must be one of {sorted(QUALITY_STATUSES)}",
+                    )
+                )
+            if schema_version == 3 and not is_non_negative_int(asset.get("refinement_attempts")):
+                issues.append(
+                    ArtifactIssue(f"{base}.refinement_attempts", "must be a non-negative integer")
+                )
+            if not isinstance(asset.get("include_in_import"), bool):
+                issues.append(ArtifactIssue(f"{base}.include_in_import", "must be boolean"))
+        issues.extend(validate_dependency_dag(asset_dependencies, path="assets"))
+        for layer_id, dependency_ids in asset_dependencies.items():
+            if asset_readiness.get(layer_id) != "approved":
+                continue
+            for dependency_id in dependency_ids:
+                if asset_readiness.get(dependency_id) != "approved":
+                    record(
+                        ArtifactIssue(
+                            f"assets.{layer_id}.dependencies",
+                            f"approved asset requires approved dependency: {dependency_id}",
+                        ),
+                        warning_in_dev=True,
+                    )
 
     try:
         derived_manifest = derive_asset_manifest(data)
@@ -231,7 +333,7 @@ def validate_asset_generation_queue(
     target_to_job: dict[str, str] = {}
     feedback_ref_to_job: dict[str, str] = {}
     approved_jobs: set[str] = set()
-    dependencies: list[tuple[str, str]] = []
+    job_dependencies: list[tuple[str, str]] = []
     if not isinstance(jobs, list) or not jobs:
         issues.append(ArtifactIssue("jobs", "must be a non-empty list"))
     else:
@@ -320,14 +422,7 @@ def validate_asset_generation_queue(
             ):
                 issues.append(ArtifactIssue(f"{base}.depends_on", "must be a list of strings"))
             else:
-                dependencies.extend((job_id, item) for item in depends_on)
-                if family in REQUIRED_PART_FAMILIES and depends_on:
-                    issues.append(
-                        ArtifactIssue(
-                            f"{base}.depends_on",
-                            "required part-family jobs must start without dependencies",
-                        )
-                    )
+                job_dependencies.extend((job_id, item) for item in depends_on)
 
             status = job.get("status")
             if status not in JOB_STATUSES:
@@ -371,7 +466,7 @@ def validate_asset_generation_queue(
         missing_families = REQUIRED_PART_FAMILIES - set(family_to_job)
         for family in sorted(missing_families):
             issues.append(ArtifactIssue("jobs", f"missing required part family: {family}"))
-        for job_id, dependency in dependencies:
+        for job_id, dependency in job_dependencies:
             if dependency not in job_ids:
                 issues.append(
                     ArtifactIssue(
@@ -383,6 +478,37 @@ def validate_asset_generation_queue(
                 issues.append(
                     ArtifactIssue(f"jobs.{job_id}.depends_on", "job cannot depend on itself")
                 )
+        dependency_graph: dict[str, set[str]] = {job_id: set() for job_id in job_ids}
+        for job_id, dependency in job_dependencies:
+            if dependency in job_ids and dependency != job_id:
+                dependency_graph[job_id].add(dependency)
+        for job_id, dependency in job_dependencies:
+            if job_id in approved_jobs and dependency not in approved_jobs:
+                record(
+                    ArtifactIssue(
+                        f"jobs.{job_id}.depends_on",
+                        f"approved job requires approved dependency: {dependency}",
+                    ),
+                    warning_in_dev=True,
+                )
+        remaining = {job_id: set(values) for job_id, values in dependency_graph.items()}
+        while True:
+            ready = {
+                job_id for job_id, dependency_values in remaining.items() if not dependency_values
+            }
+            if not ready:
+                break
+            for job_id in ready:
+                remaining.pop(job_id)
+            for dependency_values in remaining.values():
+                dependency_values.difference_update(ready)
+        if remaining:
+            issues.append(
+                ArtifactIssue(
+                    "jobs.depends_on",
+                    f"dependency cycle detected: {sorted(remaining)}",
+                )
+            )
         for target in sorted(set(target_to_job) - asset_ids):
             issues.append(ArtifactIssue("jobs.targets", f"unknown canonical asset: {target}"))
         for layer_id in sorted(asset_ids - set(target_to_job)):

@@ -1,0 +1,52 @@
+schema_version: 1
+project: sample-one-image-model
+derived_from:
+  mask_manifest: examples/mask_manifest.sample.yaml
+  asset_generation_queue: examples/asset_generation_queue.sample.yaml
+source_image: assets/source/character.png
+reconstructed_source: generated/reconstructed_source.png
+difference_image: generated/source_difference.png
+parts:
+  - layer_id: eye_white_L
+    quality_status: fail
+    metrics:
+      white_halo_px: 0
+      transparent_hole_px: 3
+      overlap_deficit_px: 6
+      difference_score: 0.002
+    failed_checks: [transparent_hole_px, overlap_deficit_px, source_pixel_difference]
+  - layer_id: eye_white_R
+    quality_status: pass
+    metrics:
+      white_halo_px: 0
+      transparent_hole_px: 0
+      overlap_deficit_px: 0
+      difference_score: 0.0
+    failed_checks: []
+  - layer_id: mouth_inner
+    quality_status: pass
+    metrics: &pass_metrics
+      white_halo_px: 0
+      transparent_hole_px: 0
+      overlap_deficit_px: 0
+      difference_score: 0.0
+    failed_checks: []
+  - layer_id: hair_back
+    quality_status: pass
+    metrics: *pass_metrics
+    failed_checks: []
+  - layer_id: torso_base
+    quality_status: pass
+    metrics: *pass_metrics
+    failed_checks: []
+  - layer_id: face_hidden_fill
+    quality_status: pass
+    metrics: *pass_metrics
+    failed_checks: []
+thresholds:
+  max_global_difference_score: 0.0
+summary:
+  total_parts: 6
+  failed_parts: 1
+  result: fail
+  global_difference_score: 0.001

@@ -9,6 +9,7 @@ description = "Safe, high-level Codex tooling for Live2D Cubism workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "Pillow>=11.0",
   "PyYAML>=6.0.2",
   "websockets>=14.2",
 ]
@@ -36,6 +37,13 @@ asset-feedback-validator = "tools.asset_feedback_validator:main"
 asset-generation-queue-validator = "tools.asset_generation_queue_validator:main"
 asset-queue-builder = "tools.asset_queue_builder:main"
 cubism-evaluation = "tools.cubism_evaluation:main"
+mask-candidate-generator = "tools.mask_candidate_generator:main"
+part-extractor = "tools.part_extractor:main"
+hidden-region-completer = "tools.hidden_region_completer:main"
+asset-recomposer = "tools.asset_recomposer:main"
+asset-quality-evaluator = "tools.asset_quality_evaluator:main"
+motion-stress-tester = "tools.motion_stress_tester:main"
+asset-refinement-planner = "tools.asset_refinement_planner:main"
 psd-asset-builder = "tools.psd_asset_builder:main"
 validate-action-plan = "scripts.validate_action_plan:main"
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Image to Live2D Assets"
-  short_description: "Build canonical Live2D asset queues and derivatives"
-  default_prompt: "Use $image-to-live2d-assets with this approved character spec and source image to build a canonical asset queue and derive its manifest and layer map."
+  short_description: "Extract, recompose, and evaluate source-preserving Live2D assets"
+  default_prompt: "Use $image-to-live2d-assets with this approved character spec and source image to create a canonical queue, extract source-preserving parts, recompose and evaluate them, and requeue only failed parts without claiming unconnected backends are complete."

@@ -57,6 +57,29 @@ def test_inferred_parts_always_require_review(source_image: Path) -> None:
     assert all("Infer hidden pixels" in part["prompt"]["instruction"] for part in inferred)
 
 
+def test_plan_uses_three_masks_and_draw_order(source_image: Path) -> None:
+    plan = build_material_plan(source_image, model_scope="bust_up", motion_level="minimal")
+    parts = plan["parts"]
+    assert isinstance(parts, list)
+
+    assert all(part["target_mask"].endswith(".target.png") for part in parts)
+    assert all(part["protect_mask"].endswith(".protect.png") for part in parts)
+    assert all(part["inpaint_mask"].endswith(".inpaint.png") for part in parts)
+    assert all(isinstance(part["draw_order"], int) for part in parts)
+
+
+def test_draw_order_places_hidden_and_back_hair_behind_visible_face(source_image: Path) -> None:
+    plan = build_material_plan(source_image, model_scope="bust_up", motion_level="standard")
+    parts = plan["parts"]
+    assert isinstance(parts, list)
+    order = {part["layer_id"]: part["draw_order"] for part in parts}
+
+    assert order["face_hidden_fill"] < order["face_base"]
+    assert order["hair_back_hidden_fill"] < order["hair_back"]
+    assert order["hair_back"] < order["face_base"] < order["eye_white_L"]
+    assert order["eye_white_L"] < order["eye_iris_L"] < order["eye_highlight_L"]
+
+
 def test_default_cli_is_dry_run(source_image: Path, capsys: pytest.CaptureFixture[str]) -> None:
     output = source_image.parent / "plan.yaml"
     result = main(

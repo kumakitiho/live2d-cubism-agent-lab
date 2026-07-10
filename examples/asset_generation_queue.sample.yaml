@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 validation_mode: strict
 project: sample-one-image-model
 source_image:
@@ -14,6 +14,7 @@ canvas:
 derivatives:
   asset_manifest: examples/asset_manifest.sample.yaml
   layer_map: examples/layer_map.sample.yaml
+  mask_manifest: examples/mask_manifest.sample.yaml
   model_import_psd: generated/model_import.psd
 import_constraints:
   unique_layer_names: true
@@ -31,10 +32,16 @@ assets:
     role: eye_white
     side: L
     source_file: generated/parts/eye_white_L.png
-    mask_file: generated/masks/eye_white_L.png
+    target_mask: generated/masks/eye_white_L.target.png
+    protect_mask: generated/masks/eye_white_L.protect.png
+    inpaint_mask: generated/masks/eye_white_L.inpaint.png
     prompt_id: part-eye-white-L
-    generation_method: mask_extract
-    order: 10
+    generation_method: extract
+    dependencies: []
+    draw_order: 50
+    overlap_margin_px: 2
+    quality_status: pending
+    refinement_attempts: 0
     required: true
     inferred: false
     review_required: false
@@ -46,10 +53,16 @@ assets:
     role: eye_white
     side: R
     source_file: generated/parts/eye_white_R.png
-    mask_file: generated/masks/eye_white_R.png
+    target_mask: generated/masks/eye_white_R.target.png
+    protect_mask: generated/masks/eye_white_R.protect.png
+    inpaint_mask: generated/masks/eye_white_R.inpaint.png
     prompt_id: part-eye-white-R
-    generation_method: mask_extract
-    order: 20
+    generation_method: extract
+    dependencies: []
+    draw_order: 60
+    overlap_margin_px: 2
+    quality_status: pending
+    refinement_attempts: 0
     required: true
     inferred: false
     review_required: false
@@ -61,10 +74,16 @@ assets:
     role: mouth_inner
     side: C
     source_file: generated/parts/mouth_inner.png
-    mask_file: generated/masks/mouth_inner.png
+    target_mask: generated/masks/mouth_inner.target.png
+    protect_mask: generated/masks/mouth_inner.protect.png
+    inpaint_mask: generated/masks/mouth_inner.inpaint.png
     prompt_id: part-mouth-inner
     generation_method: inpaint
-    order: 30
+    dependencies: []
+    draw_order: 40
+    overlap_margin_px: 4
+    quality_status: pending
+    refinement_attempts: 0
     required: true
     inferred: true
     review_required: true
@@ -76,10 +95,16 @@ assets:
     role: hair_back
     side: C
     source_file: generated/parts/hair_back.png
-    mask_file: generated/masks/hair_back.png
+    target_mask: generated/masks/hair_back.target.png
+    protect_mask: generated/masks/hair_back.protect.png
+    inpaint_mask: generated/masks/hair_back.inpaint.png
     prompt_id: part-hair-back
-    generation_method: mask_extract
-    order: 40
+    generation_method: extract
+    dependencies: []
+    draw_order: 10
+    overlap_margin_px: 3
+    quality_status: pending
+    refinement_attempts: 0
     required: true
     inferred: false
     review_required: false
@@ -91,10 +116,16 @@ assets:
     role: torso_base
     side: C
     source_file: generated/parts/torso_base.png
-    mask_file: generated/masks/torso_base.png
+    target_mask: generated/masks/torso_base.target.png
+    protect_mask: generated/masks/torso_base.protect.png
+    inpaint_mask: generated/masks/torso_base.inpaint.png
     prompt_id: part-torso-base
-    generation_method: mask_extract
-    order: 50
+    generation_method: extract
+    dependencies: []
+    draw_order: 20
+    overlap_margin_px: 4
+    quality_status: pending
+    refinement_attempts: 0
     required: true
     inferred: false
     review_required: false
@@ -106,10 +137,16 @@ assets:
     role: face_hidden_fill
     side: C
     source_file: generated/parts/face_hidden_fill.png
-    mask_file: generated/masks/face_hidden_fill.png
+    target_mask: generated/masks/face_hidden_fill.target.png
+    protect_mask: generated/masks/face_hidden_fill.protect.png
+    inpaint_mask: generated/masks/face_hidden_fill.inpaint.png
     prompt_id: part-face-hidden-fill
     generation_method: inpaint
-    order: 60
+    dependencies: []
+    draw_order: 30
+    overlap_margin_px: 8
+    quality_status: pending
+    refinement_attempts: 0
     required: true
     inferred: true
     review_required: true

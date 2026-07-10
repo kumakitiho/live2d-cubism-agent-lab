@@ -10,18 +10,20 @@ parts:
     layer_name: face_base
     role: face_base
     side: C
-    generation_method: mask_extract
+    generation_method: extract
     inferred: false
     review_required: false
     required: true
     source_file: generated/parts/face_base.png
-    mask_file: generated/masks/face_base.png
+    target_mask: generated/masks/face_base.target.png
+    protect_mask: generated/masks/face_base.protect.png
+    inpaint_mask: generated/masks/face_base.inpaint.png
     prompt_id: part-face_base
     prompt:
       instruction: Create only the face_base part on a transparent, source-aligned canvas.
       preserve: [character identity, line style, palette, lighting direction]
       avoid: [full character regeneration, canvas resize, opaque background]
-    order: 10
+    draw_order: 400000
 deliverables:
   asset_manifest: generated/asset_manifest.yaml
   layer_map: generated/layer_map.yaml

@@ -12,6 +12,7 @@ import yaml
 
 from tools.artifact_validation import load_yaml_mapping, validate_layer_map
 from tools.asset_manifest_validator import validate_asset_manifest
+from tools.asset_pipeline_common import is_positive_int
 
 MANIFEST_PART_FIELDS = (
     "layer_id",
@@ -19,15 +20,21 @@ MANIFEST_PART_FIELDS = (
     "role",
     "side",
     "source_file",
-    "mask_file",
     "prompt_id",
     "generation_method",
-    "order",
     "required",
     "inferred",
     "review_required",
     "readiness",
     "include_in_import",
+    "target_mask",
+    "protect_mask",
+    "inpaint_mask",
+    "dependencies",
+    "draw_order",
+    "overlap_margin_px",
+    "quality_status",
+    "refinement_attempts",
 )
 
 
@@ -57,6 +64,14 @@ def _derived_from(queue: Mapping[str, Any], queue_ref: str | None) -> dict[str, 
     }
 
 
+def _asset_draw_order(asset: Mapping[str, Any], index: int) -> int:
+    raw_order = asset.get("draw_order", asset.get("order"))
+    if not is_positive_int(raw_order):
+        raise ValueError(f"queue assets[{index}].draw_order must be a positive integer")
+    assert isinstance(raw_order, int)
+    return raw_order
+
+
 def derive_asset_manifest(
     queue: Mapping[str, Any],
     *,
@@ -69,10 +84,11 @@ def derive_asset_manifest(
     assets = _require_assets(queue)
 
     parts: list[dict[str, Any]] = []
-    for asset in assets:
-        parts.append(
-            {key: deepcopy(asset.get(key)) for key in MANIFEST_PART_FIELDS if key in asset}
-        )
+    for index, asset in enumerate(assets):
+        part = {key: deepcopy(asset.get(key)) for key in MANIFEST_PART_FIELDS if key in asset}
+        part["mask_file"] = deepcopy(asset.get("target_mask", asset.get("mask_file")))
+        part["order"] = _asset_draw_order(asset, index)
+        parts.append(part)
 
     return {
         "schema_version": 1,
@@ -100,7 +116,10 @@ def derive_layer_map(
     assets = _require_assets(queue)
 
     layers: list[dict[str, Any]] = []
-    for asset in assets:
+    for index, asset in enumerate(assets):
+        raw_order = _asset_draw_order(asset, index)
+        if asset.get("include_in_import") is not True:
+            continue
         layers.append(
             {
                 "path": asset.get("layer_path"),
@@ -109,14 +128,14 @@ def derive_layer_map(
                 "role": asset.get("role"),
                 "side": asset.get("side"),
                 "source": asset.get("source_file"),
-                "order": asset.get("order"),
+                "order": raw_order,
                 "inferred": asset.get("inferred"),
                 "review_required": asset.get("review_required"),
                 "readiness": asset.get("readiness"),
                 "required": asset.get("required"),
             }
         )
-    layers.sort(key=lambda layer: int(layer.get("order", 0)))
+    layers.sort(key=lambda layer: layer["order"])
 
     return {
         "schema_version": 1,
@@ -145,7 +164,17 @@ def _resolve_path(base_dir: Path, value: object, field: str) -> Path:
     return resolved
 
 
-def _write_yaml_pair(
+def normalize_queue_ref(queue_path: Path, base_dir: Path) -> str:
+    resolved_queue = queue_path.resolve()
+    resolved_base = base_dir.resolve()
+    try:
+        relative = resolved_queue.relative_to(resolved_base)
+    except ValueError as exc:
+        raise ValueError("queue path must stay inside base-dir") from exc
+    return relative.as_posix()
+
+
+def write_yaml_pair(
     manifest_path: Path,
     manifest: Mapping[str, Any],
     layer_map_path: Path,
@@ -225,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         if not queue_report.valid:
             details = "; ".join(issue.format() for issue in queue_report.issues)
             raise ValueError(f"queue is invalid: {details}")
-        queue_ref = args.queue.as_posix()
+        queue_ref = normalize_queue_ref(args.queue, base_dir)
         manifest = derive_asset_manifest(queue, queue_ref=queue_ref)
         layer_map = derive_layer_map(queue, queue_ref=queue_ref)
         manifest_report = validate_asset_manifest(manifest)
@@ -252,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     if args.execute:
         try:
-            _write_yaml_pair(
+            write_yaml_pair(
                 manifest_path,
                 manifest,
                 layer_map_path,

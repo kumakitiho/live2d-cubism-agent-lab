@@ -1,0 +1,74 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Live2D pre-Cubism asset quality report
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - project
+  - derived_from
+  - source_image
+  - reconstructed_source
+  - difference_image
+  - parts
+  - thresholds
+  - summary
+properties:
+  schema_version:
+    const: 1
+  project: {type: string, minLength: 1}
+  derived_from:
+    type: object
+    additionalProperties: false
+    required: [mask_manifest, asset_generation_queue]
+    properties:
+      mask_manifest: {type: string, minLength: 1}
+      asset_generation_queue: {type: string, minLength: 1}
+  source_image: {type: string, minLength: 1}
+  reconstructed_source: {type: string, minLength: 1}
+  difference_image: {type: string, minLength: 1}
+  parts:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [layer_id, quality_status, metrics, failed_checks]
+      properties:
+        layer_id: {type: string, minLength: 1}
+        quality_status: {enum: [pass, fail]}
+        metrics:
+          type: object
+          additionalProperties: false
+          required:
+            - white_halo_px
+            - transparent_hole_px
+            - overlap_deficit_px
+            - difference_score
+          properties:
+            white_halo_px: {type: integer, minimum: 0}
+            transparent_hole_px: {type: integer, minimum: 0}
+            overlap_deficit_px: {type: integer, minimum: 0}
+            difference_score: {type: number, minimum: 0, maximum: 1}
+        failed_checks:
+          type: array
+          uniqueItems: true
+          items:
+            enum:
+              - white_halo_px
+              - transparent_hole_px
+              - overlap_deficit_px
+              - source_pixel_difference
+  thresholds:
+    type: object
+    additionalProperties: false
+    required: [max_global_difference_score]
+    properties:
+      max_global_difference_score: {type: number, minimum: 0, maximum: 1}
+  summary:
+    type: object
+    additionalProperties: false
+    required: [total_parts, failed_parts, result, global_difference_score]
+    properties:
+      total_parts: {type: integer, minimum: 0}
+      failed_parts: {type: integer, minimum: 0}
+      result: {enum: [pass, fail]}
+      global_difference_score: {type: number, minimum: 0, maximum: 1}

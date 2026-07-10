@@ -172,7 +172,7 @@ def test_queue_rejects_target_layer_owned_by_multiple_jobs() -> None:
     assert any("target layer is already owned" in issue.message for issue in report.issues)
 
 
-def test_required_jobs_cannot_depend_on_each_other() -> None:
+def test_required_jobs_may_depend_on_each_other_when_acyclic() -> None:
     data = deepcopy(_sample())
     jobs = data["jobs"]
     assert isinstance(jobs, list)
@@ -180,8 +180,63 @@ def test_required_jobs_cannot_depend_on_each_other() -> None:
 
     report = validate_asset_generation_queue(data)
 
+    assert report.valid
+
+
+def test_job_dependency_cycle_is_rejected() -> None:
+    data = deepcopy(_sample())
+    jobs = data["jobs"]
+    assert isinstance(jobs, list)
+    jobs[0]["depends_on"] = ["mouth"]
+    jobs[1]["depends_on"] = ["eyes"]
+
+    report = validate_asset_generation_queue(data)
+
     assert not report.valid
-    assert any("must start without dependencies" in issue.message for issue in report.issues)
+    assert any("dependency cycle detected" in issue.message for issue in report.issues)
+
+
+def test_approved_job_requires_approved_dependency() -> None:
+    data = deepcopy(_sample())
+    jobs = data["jobs"]
+    assets = data["assets"]
+    assert isinstance(jobs, list) and isinstance(assets, list)
+    eyes = jobs[0]
+    mouth = jobs[1]
+    eyes["depends_on"] = [mouth["id"]]
+    eyes["status"] = "approved"
+    for key in eyes["validation"]:
+        eyes["validation"][key] = True
+    eye_targets = set(eyes["targets"])
+    for asset in assets:
+        if asset["layer_id"] in eye_targets:
+            asset["readiness"] = "approved"
+
+    report = validate_asset_generation_queue(data)
+
+    assert not report.valid
+    assert any("requires approved dependency" in issue.message for issue in report.issues)
+
+
+def test_legacy_v2_queue_remains_readable() -> None:
+    data = deepcopy(_sample())
+    data["schema_version"] = 2
+    data["derivatives"].pop("mask_manifest")
+    for asset in data["assets"]:
+        asset["mask_file"] = asset.pop("target_mask")
+        asset.pop("protect_mask")
+        asset.pop("inpaint_mask")
+        asset["order"] = asset.pop("draw_order")
+        asset.pop("dependencies")
+        asset.pop("overlap_margin_px")
+        asset.pop("quality_status")
+        asset.pop("refinement_attempts")
+        if asset["generation_method"] == "extract":
+            asset["generation_method"] = "mask_extract"
+
+    report = validate_asset_generation_queue(data)
+
+    assert report.valid
 
 
 def test_unresolved_high_feedback_blocks_merge_even_if_gate_claims_resolved() -> None:

@@ -22,12 +22,18 @@ description: validator済みcharacter_spec.yamlと1枚のsource画像からLive2
 3. `assets/asset_generation_queue.template.yaml` から目、口、髪、体、隠れ補完のcanonical assetと並列jobを作る。
 4. feedback入力があれば `target_layer_id` に対応するjobの `feedback_refs` へIDを追加し、requested actionとevidenceを反映してそのjobを再開する。
 5. `python -m tools.asset_generation_queue_validator <queue>` で構造を検証する。通常は `strict`、未完成素材を扱う開発中だけ `validation_mode: dev` を使う。
-6. 各jobで抽出、mask、inpainting、再描画を行い、隠れ部分を `inferred: true`、`review_required: true` とする。
-7. `python -m tools.asset_queue_builder <queue>` をdry-runし、`--execute` でqueueから `asset_manifest.yaml` と `layer_map.yaml` を再生成する。
-8. `python -m tools.asset_manifest_validator <manifest> --base-dir .` を実行する。
-9. `python -m tools.psd_asset_builder <manifest>` でPSD build planを確認する。
-10. 実backendがなければ `model_import.psd` を生成済みと主張しない。
-11. handoff直前に `python -m tools.asset_generation_queue_validator <queue> --base-dir . --manifest <manifest> --require-merge-ready` でqueueとmanifestのpath・project・sourceを結合検証し、続けて `python -m tools.asset_manifest_validator <manifest> --base-dir . --require-handoff-ready` を実行する。両方が終了コード0のときだけ `$live2d-cubism-workflow` へ引き継ぐ。
+6. `python -m tools.mask_candidate_generator <queue>` をdry-runし、queueからmask manifestを導出する。実mask画像生成backendが未接続なら、maskを生成済みと主張しない。
+7. 各partは `extract` → `extract_and_edge_repair` → `transparency_fill` → `inpaint` → `redraw` の順に、source画素を最も多く保持できる手法を優先する。隠れ部分を `inferred: true`、`review_required: true` とする。
+8. `tools.part_extractor` と `tools.hidden_region_completer` を使う場合も、全partをsourceと同じcanvas size・originで保持する。protect mask内のsource画素を変更しない。
+9. `tools.asset_recomposer` でdraw order順に再合成し、`reconstructed_source.png` とsourceのdifference imageを作る。
+10. `tools.asset_quality_evaluator` でwhite halo、透明穴、overlap不足、protect mask内のsource画素差分、再合成差分を確認する。quality reportは全import partを含める。
+11. `tools.motion_stress_tester` で単純平行移動時の露出を目視する。このpreviewは非gateで、quality statusを自動変更せず、Cubism deformation品質まで確認済みとは扱わない。
+12. quality gateに失敗したpartだけを `tools.asset_refinement_planner` で再生成候補へ戻し、同job内の合格partは変更しない。3回失敗済みなら自動再生成せずmanual reviewで停止する。
+13. `python -m tools.asset_queue_builder <queue>` をdry-runし、`--execute` でqueueから `asset_manifest.yaml` と `layer_map.yaml` を再生成する。
+14. `python -m tools.asset_manifest_validator <manifest> --base-dir .` を実行する。
+15. `python -m tools.psd_asset_builder <manifest>` でPSD build planを確認する。
+16. 実PSD backendがなければ `model_import.psd` を生成済みと主張しない。
+17. handoff直前に `python -m tools.asset_generation_queue_validator <queue> --base-dir . --manifest <manifest> --require-merge-ready` でqueueとmanifestのpath・project・sourceを結合検証し、続けて `python -m tools.asset_manifest_validator <manifest> --base-dir . --require-handoff-ready` を実行する。両方が終了コード0のときだけ `$live2d-cubism-workflow` へ引き継ぐ。
 
 ## 所有する成果物
 
@@ -38,9 +44,14 @@ description: validator済みcharacter_spec.yamlと1枚のsource画像からLive2
 - `image_prompt.md`
 - `psd_separation_instructions.md`
 - 部品mask・inpainting計画
+- `mask_manifest.yaml`（queueからの派生物）
+- `reconstructed_source.png`、difference image、`asset_quality.yaml`
+- motion stress previewとfailed-part refinement plan
 - 将来の `generated/parts/*.png` と `model_import.psd`
 
 素材状態、layer metadata、出力先、import制約はqueue templateにだけ保持する。
+
+queue schema v3がmask/quality/refinement fieldを所有する。旧v2 queueはvalidatorとmanifest/layer map builderで読み取り互換を維持するが、実素材pipelineへ進む前にv3へ移行する。
 
 ## Feedback処理
 
@@ -49,7 +60,7 @@ description: validator済みcharacter_spec.yamlと1枚のsource画像からLive2
 - requested actionをprompt/mask/segmentation計画へ反映する。
 - 再生成結果を再レビューし、queueのasset readiness、job status、validationを更新する。
 - すべてのrequired jobを再mergeし、queueからmanifest/layer map/PSD build planを再構築する。
-- 同じlayer/issueで3回失敗したら4回目を止める。
+- 同じassetの累積 `refinement_attempts` が3回に達したら4回目を止める。
 
 ## 境界
 
@@ -58,6 +69,7 @@ description: validator済みcharacter_spec.yamlと1枚のsource画像からLive2
 - source画像だけから見えない形状を事実として扱わない。
 - 未レビューのinferred素材をimport可能と判定しない。
 - 外部画像生成、segmentation、inpainting、Photoshop Pluginは後付け可能なadapterとして扱う。
+- 現在のPillow実装はmask抽出、限定的な透明領域補完、再合成、簡易品質検査、平行移動previewまでである。意味segmentation、生成inpainting、redraw、実PSD writerを完了済みと主張しない。
 
 ## 将来分割予定
 

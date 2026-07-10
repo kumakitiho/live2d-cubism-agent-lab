@@ -11,13 +11,55 @@ MODEL_SCOPES = ("bust_up", "half_body", "full_body")
 MOTION_LEVELS = ("minimal", "standard", "expressive")
 SUPPORTED_SOURCE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 
+# Draw order is back-to-front: larger values are composited above smaller values.
+ROLE_Z_ORDER = {
+    "hair_back_hidden_fill": 1000,
+    "hair_back": 1100,
+    "leg": 2000,
+    "foot": 2100,
+    "shoe": 2200,
+    "hip_base": 2300,
+    "waist_base": 2400,
+    "torso_base": 2500,
+    "arm": 2600,
+    "hand": 2700,
+    "clothes_lower": 2800,
+    "clothes_upper": 2900,
+    "neck_base": 3000,
+    "ear": 3100,
+    "face_hidden_fill": 3900,
+    "face_base": 4000,
+    "mouth_inner": 4100,
+    "tongue": 4110,
+    "teeth_upper": 4120,
+    "mouth_base": 4200,
+    "mouth_lower": 4210,
+    "mouth_upper": 4220,
+    "mouth_smile_line": 4230,
+    "eye": 4300,
+    "eye_white": 4310,
+    "eye_iris": 4320,
+    "eye_pupil": 4330,
+    "eye_highlight": 4340,
+    "eyelid_lower": 4350,
+    "eyelid_upper": 4360,
+    "eyelid_shadow": 4370,
+    "eye_closed_line": 4380,
+    "brow": 4400,
+    "hair_side": 5000,
+    "hair_side_tip": 5010,
+    "hair_front": 5100,
+    "hair_front_tip": 5110,
+    "hair_accessory": 5200,
+}
+
 
 @dataclass(frozen=True)
 class PartTemplate:
     layer_id: str
     role: str
     side: str = "C"
-    generation_method: str = "mask_extract"
+    generation_method: str = "extract"
     inferred: bool = False
     review_required: bool = False
     required: bool = True
@@ -211,7 +253,9 @@ def _serialize_part(part: PartTemplate, index: int) -> dict[str, Any]:
         "review_required": part.review_required,
         "required": part.required,
         "source_file": f"generated/parts/{layer_id}.png",
-        "mask_file": f"generated/masks/{layer_id}.png",
+        "target_mask": f"generated/masks/{layer_id}.target.png",
+        "protect_mask": f"generated/masks/{layer_id}.protect.png",
+        "inpaint_mask": f"generated/masks/{layer_id}.inpaint.png",
         "prompt_id": f"part-{layer_id}",
         "prompt": {
             "instruction": instruction,
@@ -223,7 +267,7 @@ def _serialize_part(part: PartTemplate, index: int) -> dict[str, Any]:
                 "untracked accessories",
             ],
         },
-        "order": (index + 1) * 10,
+        "draw_order": ROLE_Z_ORDER.get(part.role, 3500) * 100 + index,
     }
 
 
@@ -245,6 +289,9 @@ def build_material_plan(
     if len(layer_ids) != len(set(layer_ids)):
         raise RuntimeError("internal taxonomy contains duplicate layer ids")
 
+    serialized_parts = [_serialize_part(part, index) for index, part in enumerate(templates)]
+    serialized_parts.sort(key=lambda part: part["draw_order"])
+
     return {
         "schema_version": 1,
         "project": project or resolved_source.stem,
@@ -260,7 +307,7 @@ def build_material_plan(
             "mark_inferred_hidden_regions": True,
             "review_inferred_before_handoff": True,
         },
-        "parts": [_serialize_part(part, index) for index, part in enumerate(templates)],
+        "parts": serialized_parts,
         "deliverables": {
             "asset_manifest": "generated/asset_manifest.yaml",
             "layer_map": "generated/layer_map.yaml",

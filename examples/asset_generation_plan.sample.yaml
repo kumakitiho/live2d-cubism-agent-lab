@@ -2,7 +2,7 @@ schema_version: 1
 project: sample-one-image-model
 source_image:
   path: assets/source/character.png
-  rights_status: needs_confirmation
+  rights_status: confirmed
 model_scope: bust_up
 motion_level: standard
 generation_policy:
@@ -15,18 +15,20 @@ parts:
     layer_name: face_base
     role: face_base
     side: C
-    generation_method: mask_extract
+    generation_method: extract
     inferred: false
     review_required: false
     required: true
     source_file: generated/parts/face_base.png
-    mask_file: generated/masks/face_base.png
+    target_mask: generated/masks/face_base.target.png
+    protect_mask: generated/masks/face_base.protect.png
+    inpaint_mask: generated/masks/face_base.inpaint.png
     prompt_id: part-face_base
     prompt:
       instruction: Create only the face_base part on a transparent, source-aligned canvas.
       preserve: [character identity, line style, palette, lighting direction]
       avoid: [full character regeneration, canvas resize, opaque background]
-    order: 10
+    draw_order: 400000
   - layer_id: face_hidden_fill
     layer_name: face_hidden_fill
     role: face_hidden_fill
@@ -36,13 +38,15 @@ parts:
     review_required: true
     required: true
     source_file: generated/parts/face_hidden_fill.png
-    mask_file: generated/masks/face_hidden_fill.png
+    target_mask: generated/masks/face_hidden_fill.target.png
+    protect_mask: generated/masks/face_hidden_fill.protect.png
+    inpaint_mask: generated/masks/face_hidden_fill.inpaint.png
     prompt_id: part-face_hidden_fill
     prompt:
       instruction: Conservatively infer only the hidden face pixels on a transparent, source-aligned canvas.
       preserve: [character identity, line style, palette, lighting direction]
       avoid: [full character regeneration, canvas resize, opaque background]
-    order: 20
+    draw_order: 390001
 deliverables:
   asset_manifest: generated/asset_manifest.yaml
   layer_map: generated/layer_map.yaml

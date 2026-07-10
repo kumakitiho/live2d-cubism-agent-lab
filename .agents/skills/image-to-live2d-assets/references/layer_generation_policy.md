@@ -3,9 +3,14 @@
 ## Generation methods
 
 - `extract`: sourceで見えている画素を切り出す。
-- `mask_extract`: segmentation maskで見えている領域を切り出す。
+- `extract_and_edge_repair`: source画素を抽出し、alpha境界だけ補修する。
+- `transparency_fill`: source色を保ったまま透明穴・不足alphaだけ補完する。
 - `inpaint`: 隠れ領域を補完する。必ずinferredかつreview requiredにする。
 - `redraw`: 人間または外部描画ツールが部品を描き直す。レビューを要求する。
+
+source画素を保持する優先順位は `extract > extract_and_edge_repair > transparency_fill > inpaint > redraw` とする。品質gateで失敗したpartだけを次の方式へ進め、合格partをまとめて再生成しない。
+
+`draw_order` は背面から前面への順序で、小さい値を先に、大きい値を上へ合成する。hidden fillは対応するvisible baseより小さく、back hairはface・eyes・front hairより小さくする。
 
 ## Asset loop
 

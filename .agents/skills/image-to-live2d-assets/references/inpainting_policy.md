@@ -5,10 +5,11 @@
 source画像で見えない画素を補完した部品は、すべて次を満たす。
 
 ```yaml
-generation_method: inpaint
 inferred: true
 review_required: true
 ```
+
+`generation_method` は実際に使った `extract_and_edge_repair`、`transparency_fill`、`inpaint`、`redraw` のいずれかを記録する。sourceで見えない画素を含む限り、局所fillであってもinferred/review requiredを解除しない。
 
 prompt ID、mask path、使用tool、生成日時またはrun IDをmanifestへ追記できる形にする。
 
