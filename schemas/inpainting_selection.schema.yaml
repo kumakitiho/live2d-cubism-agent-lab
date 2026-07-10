@@ -1,0 +1,104 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Reviewed inpainting candidate selection plan
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - project
+  - run_id
+  - layer_id
+  - status
+  - derived_from_result
+  - derived_result_sha256
+  - review_required
+  - review
+  - selected_candidate
+  - ranking
+  - rejected_candidates
+  - queue_update_plan
+properties:
+  schema_version: {const: 1}
+  project: {type: string, minLength: 1}
+  run_id: {type: string, minLength: 1}
+  layer_id: {type: string, minLength: 1}
+  status: {const: selected}
+  derived_from_result: {type: string, minLength: 1}
+  derived_result_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  review_required: {const: true}
+  review:
+    type: object
+    additionalProperties: false
+    required: [status, reviewer, notes]
+    properties:
+      status: {enum: [pending, approved, rejected]}
+      reviewer: {type: [string, 'null']}
+      notes: {type: string}
+    allOf:
+      - if:
+          properties: {status: {const: approved}}
+        then:
+          properties:
+            reviewer: {type: string, minLength: 1}
+            notes: {type: string, minLength: 1}
+  selected_candidate:
+    $ref: inpainting_result.schema.yaml#/$defs/candidate
+  ranking:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      additionalProperties: false
+      required: [rank, candidate_id, seed, rank_key]
+      properties:
+        rank: {type: integer, minimum: 1}
+        candidate_id: {type: string, minLength: 1}
+        seed: {type: integer, minimum: 0}
+        rank_key:
+          type: array
+          minItems: 8
+          maxItems: 8
+          prefixItems:
+            - {type: number, minimum: 0}
+            - {type: number, minimum: 0}
+            - {type: number, minimum: 0}
+            - {type: number, minimum: 0}
+            - {type: number, minimum: 0}
+            - {type: number, minimum: 0}
+            - {type: integer, minimum: 0}
+            - {type: string, minLength: 1}
+  rejected_candidates:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, rejection_reasons]
+      properties:
+        candidate_id: {type: string, minLength: 1}
+        rejection_reasons:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+  queue_update_plan:
+    type: object
+    additionalProperties: false
+    required: [canonical_queue_modified, layer_id, allowed_fields]
+    properties:
+      canonical_queue_modified: {const: false}
+      layer_id: {type: string, minLength: 1}
+      allowed_fields:
+        type: array
+        uniqueItems: true
+        items:
+          enum:
+            - source_file
+            - generation_method
+            - inferred
+            - review_required
+            - quality_status
+            - readiness
+            - generation_backend
+            - model_id
+            - model_revision
+            - seed
+            - inpainting_run_id

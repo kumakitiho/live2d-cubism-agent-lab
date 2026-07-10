@@ -15,12 +15,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+inpainting = [
+  "accelerate>=1.2",
+  "diffusers>=0.32",
+  "torch>=2.5",
+  "transformers>=4.47",
+]
 windows = [
   "PyAutoGUI>=0.9.54",
   "psutil>=7.0",
   "pywinauto>=0.6.8",
 ]
 dev = [
+  "jsonschema>=4.23",
   "mypy>=1.14",
   "pytest>=8.3",
   "ruff>=0.9",
@@ -44,6 +51,10 @@ asset-recomposer = "tools.asset_recomposer:main"
 asset-quality-evaluator = "tools.asset_quality_evaluator:main"
 motion-stress-tester = "tools.motion_stress_tester:main"
 asset-refinement-planner = "tools.asset_refinement_planner:main"
+generative-inpainter = "tools.generative_inpainter:main"
+inpainting-candidate-ranker = "tools.inpainting_candidate_ranker:main"
+inpainting-prompt-builder = "tools.inpainting_prompt_builder:main"
+inpainting-preview = "tools.inpainting_preview:main"
 psd-asset-builder = "tools.psd_asset_builder:main"
 validate-action-plan = "scripts.validate_action_plan:main"
 
@@ -51,10 +62,11 @@ validate-action-plan = "scripts.validate_action_plan:main"
 packages = ["tools", "scripts"]
 
 [tool.pytest.ini_options]
-addopts = "-q -m 'not benchmark'"
+addopts = "-q -m 'not benchmark and not gpu'"
 testpaths = ["tests"]
 markers = [
   "benchmark: opt-in wall-clock performance checks for 2048x2048 image processing",
+  "gpu: opt-in tests that require an installed model and supported accelerator",
 ]
 
 [tool.ruff]
@@ -71,3 +83,8 @@ disallow_any_generics = true
 no_implicit_optional = true
 warn_return_any = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "tools.cubism_ui"
+ignore_missing_imports = true
+warn_unused_ignores = false
